@@ -78,3 +78,10 @@ Esc 清空、点击外部收起；首页搜索同时识别产业链环节（如"
 
 另验证数据可复现：用同一行情输入重跑 `fabricate_chains.py`，产物与已发布
 `chains.json` 逐字节一致。
+
+## 2026-10-01：CI 与线上部署验证
+
+- GitHub Actions「验证并部署站点」：py_compile + 数据一致性自检 + 真实 Chromium 端到端
+  （20 项断言，轮询等待而非固定 sleep，慢网络/C DN 冷启动友好）全部通过才部署 Pages。
+- 实践证明拦截有效：一次断言缺陷导致 verify 红，deploy 未执行；修复后全绿自动上线。
+- 线上 https://zhangyh066.github.io/china-chain/ 端到端 20/20 通过（子路径部署，相对路径无误）。
