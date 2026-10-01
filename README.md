@@ -119,6 +119,8 @@ python fabricate_chains.py   # ⑥ 推断上下游 → chains.json
 ①②③ 均有磁盘缓存，只需联网跑一次；之后改口径从第 ④ 步重跑即可。
 数据源暂时不可达、只想改口径重跑时，可用 `QUOTES_FILE=<旧版合并行情文件> python build_chain.py`
 沿用旧行情重建（"截至日期"会继承旧文件，不会假装数据变新了）。
+改域名/托管地址后，用 `SITE_BASE=https://新地址 python prerender.py` 重生成静态页与
+sitemap（canonical / og:url / 分享图地址都跟着变），`build_dist.py` 同样认这个环境变量。
 管线细节：两级上下游推导、`via` 经由标注、真实财务优先（取不到退回固定种子模拟并逐条标注）、
 TTM 净利润按累计口径相减真算。
 
