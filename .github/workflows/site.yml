@@ -1,0 +1,73 @@
+name: 验证并部署站点
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 验证（数据一致性 + 真实浏览器端到端）通过后才部署；任何一步红，站点不更新
+permissions:
+  pages: write
+  id-token: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 管线脚本语法检查
+        run: python -m py_compile pipeline/*.py build_dist.py serve.py
+
+      - name: 数据一致性自检（不联网不重建）
+        run: python pipeline/ci_check.py
+
+      - name: 启动站点
+        run: |
+          python serve.py 8123 &
+          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
+
+      - name: 启动 Chromium（无头 + CDP）
+        run: |
+          google-chrome --headless=new --remote-debugging-port=9223 \
+            --user-data-dir=/tmp/chrome-verify --no-sandbox \
+            --window-size=1440,1100 about:blank &
+          # 等调试端口起来
+          for i in $(seq 1 30); do
+            curl -s http://127.0.0.1:9223/json/list >/dev/null && break
+            sleep 1
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 端到端断言（真实浏览器，缓存开启）
+        run: node _verify/slim-test.mjs http://127.0.0.1:8123/ 9223
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 构建发布目录（注入站点地址与版本号）
+        run: SITE_BASE="https://zhangyh066.github.io/china-chain" python build_dist.py
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

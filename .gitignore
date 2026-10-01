@@ -12,8 +12,9 @@ dist/
 _bak*
 _tmp_cache.py
 
-# 页面验证截图与中间产物
-_verify/
+# 页面验证截图与中间产物（测试脚本本身入库，CI 要用）
+_verify/*
+!_verify/*.mjs
 
 # 系统/编辑器杂项
 .DS_Store
