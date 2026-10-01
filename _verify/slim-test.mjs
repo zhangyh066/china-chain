@@ -159,9 +159,9 @@ check('24 张画布且都有内容', wm.canvases.length === 24 && wm.canvases.ev
 
 console.log('— 观点页 —');
 await navigate(BASE + '#/vision');
-await waitFor(`!!document.querySelector('#app h2, #app h1')`, 15000);
-const vision = await evaluate(`document.querySelector('#app h2, #app h1')?.textContent?.length || 0`);
-check('观点页 markdown 渲染', vision > 0);
+// 注意：要等"文字非空"而不是"元素存在"——旧页面的标题元素在路由切换瞬间还在 DOM 里
+const visionLen = await waitFor(`(document.querySelector('#app h2, #app h1')?.textContent || '').length > 0`, 15000);
+check('观点页 markdown 渲染', visionLen === true);
 
 console.log('— PWA manifest —');
 const manifest = JSON.parse(await evaluate(`(async()=>{const r=await fetch('./manifest.webmanifest'); return r.ok?JSON.stringify(await r.json()):'null'})()`) || null);
