@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <!-- maximum-scale=1 阻止 iOS Safari 输入框聚焦时自动放大。
+       iOS 会忽略它对双指缩放的限制，所以捏合缩放仍然可用。 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>链谱 ChainAtlas · A 股产业链知识图谱可视化站点</title>
+  <meta name="description" content="链谱（ChainAtlas）—— A 股产业链知识图谱可视化站点。覆盖 A 股 4,071 家上市公司的产业链知识图谱：按 24 个申万一级行业铺开，每个行业一张产业链概览圆饼，点进去看该行业在链条上的环节与公司。行情与财务为真实公开数据，行业与环节归属为真实公开归类，上下游连线为模型推断的示意数据。" />
+  <!-- 内联图标，避免浏览器请求 /favicon.ico 产生 404 -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2313375E'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='white' stroke-width='2.4'/%3E%3Ccircle cx='16' cy='16' r='2.4' fill='white'/%3E%3C/svg%3E" />
+  <!-- 强调色的首屏不闪：只有用户确实选了非默认强调色时才打这个属性，
+       避免重载时先闪一下默认色。与 app.js 里 applyAccentTheme 用同一个 storage key。 -->
+  <script>
+    try {
+      var s = JSON.parse(localStorage.getItem("cnchain.settings") || "{}");
+      if (s.accent && s.accent !== "forest") document.documentElement.dataset.accent = s.accent;
+    } catch (e) { /* ignore */ }
+  </script>
+  <link rel="stylesheet" href="./styles.css?v=__BUILD__" />
+</head>
+<body>
+  <!-- 路由加载细线：请求资源时贴在 header 下沿的 2px 横线。
+       它随 .boot 一起出厂，这样首屏加载（i18n + index.json，早于标题绘制）
+       不用等模块解析就被盖住了；app.js 接手之后由它驱动。
+       CSS 和 JS 两边都压了 350ms 的门闸，所以缓存命中的导航永远不会闪它。 -->
+  <div id="load-rule" class="load-rule boot" aria-hidden="true"><i></i></div>
+  <p id="load-status" class="sr-only" role="status" aria-live="polite"></p>
+
+  <header class="site-header">
+    <div class="header-left">
+      <button id="settings-btn" class="icon-btn" type="button" aria-label="设置" aria-haspopup="dialog">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+          <path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7 7 0 0 0-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.74 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.38 1.04.7 1.62.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54a7 7 0 0 0 1.62-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"></path>
+        </svg>
+      </button>
+      <a id="nav-home" class="nav-link" href="#/">首页</a>
+      <span class="nav-div" aria-hidden="true"></span>
+      <a id="nav-vision" class="nav-link" href="#/vision">我们的观点</a>
+      <span class="nav-div" aria-hidden="true"></span>
+      <a id="nav-worldmap" class="nav-link" href="#/worldmap"><span id="nav-worldmap-text">全景图谱</span></a>
+    </div>
+    <div class="header-tools">
+      <!-- 搜索框要能"跳转"，不只是过滤：输入给候选下拉，回车/点击直接进公司页 -->
+      <div class="search-wrap">
+        <input id="search" type="search" class="search" autocomplete="off"
+               role="combobox" aria-expanded="false" aria-controls="search-list"
+               aria-autocomplete="list" aria-label="搜索公司" />
+        <div id="search-list" class="search-list" role="listbox" aria-label="搜索建议" hidden></div>
+      </div>
+      <select id="lang" class="lang" aria-label="语言"></select>
+    </div>
+  </header>
+
+  <main id="app" class="app"></main>
+
+  <footer class="site-footer">
+    <span id="footer-note"></span>
+  </footer>
+
+  <!-- 手机端的悬浮搜索：<=560px 时顶栏搜索框隐藏，改用拇指区的圆钮唤起搜索条。 -->
+  <div id="search-fab-wrap" class="search-fab-wrap">
+    <div id="search-pill" class="search-pill" hidden>
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      <input id="search-m" type="search" class="search-m" autocomplete="off" />
+    </div>
+    <button id="search-fab" class="search-fab" type="button" aria-label="搜索" aria-expanded="false" aria-controls="search-pill">
+      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+    </button>
+  </div>
+
+  <div id="saved-tray" class="saved-tray" data-open="false">
+    <button id="tray-toggle" class="tray-bar" type="button" aria-expanded="false" aria-controls="tray-drawer">
+      <span class="tray-star" aria-hidden="true">★</span>
+      <span class="tray-label" id="tray-label">自选</span>
+      <span class="tray-count" id="tray-count">0</span>
+      <span class="tray-chev" aria-hidden="true">▸</span>
+    </button>
+    <aside id="tray-drawer" class="tray-drawer" aria-label="自选清单">
+      <div class="tray-drawer-head">
+        <span class="tray-drawer-title"><span class="tray-drawer-star" aria-hidden="true">★</span> <span id="tray-title-text">自选清单</span></span>
+        <span class="tray-drawer-count" id="tray-drawer-count">0</span>
+        <button id="tray-close" class="tray-close" type="button" aria-label="关闭">✕</button>
+      </div>
+      <div class="tray-panel" id="tray-panel"></div>
+      <div class="tray-drawer-foot" id="tray-foot">
+        <button id="tray-clear" class="tray-clear" type="button">清空</button>
+      </div>
+    </aside>
+  </div>
+
+  <div id="settings-backdrop" class="modal-backdrop"></div>
+  <aside id="settings-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" aria-hidden="true">
+    <div class="modal-head">
+      <h2 id="settings-title" class="modal-title"></h2>
+      <button id="settings-close" class="modal-close" type="button" aria-label="关闭">✕</button>
+    </div>
+    <div id="settings-body" class="modal-body"></div>
+  </aside>
+
+  <script type="module" src="./app.js?v=__BUILD__"></script>
+</body>
+</html>
