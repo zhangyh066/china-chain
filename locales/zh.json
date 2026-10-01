@@ -4,6 +4,7 @@
   "nav.worldmap": "全景图谱",
   "nav.newChip": "新",
   "search.placeholder": "搜索名称或代码…",
+  "footer.asOf": "数据截至 {d}",
   "footer": "链谱（ChainAtlas）· A 股产业链知识图谱可视化站点 · 演示作品 · 行情与财务为真实公开数据（东方财富 · akshare）；申万一级行业与产业链环节归属为真实公开归类；上下游连线为模型推断的模拟数据，未经核实，不构成任何投资建议。",
   "loading": "加载中…",
   "save.toggle": "加入自选",

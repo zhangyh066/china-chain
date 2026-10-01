@@ -4,6 +4,7 @@
   "nav.worldmap": "The Atlas",
   "nav.newChip": "New",
   "search.placeholder": "Search name or ticker…",
+  "footer.asOf": "Data as of {d}",
   "footer": "ChainAtlas · an A-share industry-chain knowledge graph · a demo · quotes and financials are real public data (East Money / akshare); SW industry and chain-link memberships are real public classifications; upstream/downstream edges are model-inferred simulations, unverified. Not investment advice.",
   "loading": "Loading…",
   "save.toggle": "Add to watchlist",

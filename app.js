@@ -24,12 +24,12 @@ const IND_STEP = 60;               // 每次"再看 N 家"补多少
 const IND_CHAIN_CAP = 18;          // 环节芯片最多列几个（其余折进"其他"说明）
 
 /* ---- 四份数据 ----
-   index.json      4071 家：身份 + 行业 + 环节数
-   fundamentals    真实行情财务
+   index.json      4071 家：身份 + 行业 + 环节数 + 价格/涨跌幅/市值（首屏卡片用）
+   f/{代码}.json   完整行情财务，公司页按需加载（一家约 2 KB）
    graph.json      二分图成员表：行业→公司、环节→公司、公司→环节索引
    chains.json     上下游连线（**模型推断的模拟数据**，见页面上的标注）
-   index / fundamentals / graph 在启动时并行加载（首页的行业概览卡要用 graph）；
-   chains（866 KB）只在公司页加载，不拖慢首屏。 */
+   index / graph 在启动时并行加载（首页的行业概览卡要用 graph）；
+   chains（852 KB）只在公司页加载，不拖慢首屏。 */
 let graphData = null;
 let graphPromise = null;
 let chainsData = null;
@@ -355,10 +355,11 @@ function seededRng(key) {
   };
 }
 
-/* ---- 行情快照 ------------------------------------------------------------ */
-// 一份合并文件（data/fundamentals.json）装着所有代码的价格 / 市值 / 市盈率 /
-// 毛利率 / 每股收益。价值链卡片本身只讲结构（只在 companies 改动时重建），
-// 行情数字单独一个文件、单独一个刷新节奏。加载一次、缓存、渲染时合并进去。
+/* ---- 行情数据 ------------------------------------------------------------ */
+// 首屏只需要每家的价格 / 涨跌幅 / 市值——这三个字段随 index.json 一起下来
+// （pipeline/build_chain.py 并进去的），不再单独拉一份 1.6 MB 的全量合并文件。
+// 公司页的完整财务指标（市盈率 / 毛利率 / 每股收益等十项）按需加载：
+// data/f/{代码}.json 一家一份（约 2 KB），拉不到就按"没有数字"渲染，不白屏。
 // ── 产业链档案数据（行业/公司/设备三级）──────────────────────
 // 文件不存在或字段缺失都不算错——没有档案的对象不渲染档案块，
 // 有档案但缺字段才显示「待接入具体数据接口」。
@@ -368,26 +369,25 @@ const loadChainData = () => (chainPromise ||= getJSON("./data/chain/chain.json")
   .then((d) => { chainDataCache = d; return d; })
   .catch(() => { chainDataCache = { companies: {}, unlisted_companies: {}, industries: {}, devices: {} }; return chainDataCache; }));
 
-let fundamentalsPromise = null;
-function loadFundamentals() {
-  if (!fundamentalsPromise) {
-    // 拉不到就用空对象——卡片照常渲染，只是没有数字，不白屏、不报错
-    fundamentalsPromise = getJSON("./data/fundamentals.json")
-      .then((d) => (d && typeof d === "object" ? d : {}))
-      .catch(() => ({}));
+const quoteCache = new Map();
+function loadQuote(ticker) {
+  if (!quoteCache.has(ticker)) {
+    quoteCache.set(ticker, getJSON(`./data/f/${encodeURIComponent(ticker)}.json`)
+      .then((q) => (q && typeof q === "object" ? q : null))
+      .catch(() => null));   // 404 / 断网都按"无行情"处理
   }
-  return fundamentalsPromise;
+  return quoteCache.get(ticker);
 }
-function mergeFundamentals(data, snapshot) {
-  const quotes = (snapshot && snapshot.quotes) || {};
+// 把完整行情挂到公司页数据上。只有锚点渲染行情指标，上下游卡片不显示数字，
+// 所以它们不用拉。
+function mergeFundamentals(data, quote) {
   if (data && data.anchor) {
-    data.anchor.fundamentals = quotes[data.anchor.ticker] || null;
+    data.anchor.fundamentals = quote;
     // 卡片里的锚点字段叫 industry，地图的锚点节点要的是 sector。
     // 不补这一下，地图上会明晃晃地显示 "300750 · sector.undefined"。
     if (!data.anchor.sector) data.anchor.sector = data.anchor.industry;
   }
-  for (const n of (data && data.nodes) || []) n.fundamentals = quotes[n.ticker] || null;
-  if (data && snapshot && snapshot.generatedAt) data.generatedAt = snapshot.generatedAt;
+  if (data) data.generatedAt = (indexData && indexData.generatedAt) || "";
   return data;
 }
 
@@ -441,10 +441,14 @@ async function route() {
     startLoading();
     try {
       const ticker = r.ticker.toUpperCase();
-      // 只加载这三个：3889 家里只有 140 家有独立的价值链卡片，
+      // 只加载这三个：4,071 家里只有 151 家有独立的价值链卡片，
       // 其余公司的信息全部从 index.json（身份/行业）+ graph.json（所属环节/同行）推导
-      const [, , snapshot, chain] = await Promise.all([loadGraph(), loadChains(), loadFundamentals(), loadChainData()]);
       const info = (indexData?.companies || []).find((c) => c.ticker === ticker);
+      const [, , quote, chain] = await Promise.all([
+        loadGraph(), loadChains(),
+        loadQuote(ticker),          // 完整财务指标，一家一份，按需
+        loadChainData(),
+      ]);
       let card = null;
       if (info && info.curated) {
         // 只有手工梳理过价值链的公司才有卡片文件，别的不用去问（省一次 404）
@@ -460,7 +464,7 @@ async function route() {
         },
         nodes: chainNodes(ticker),     // 上下游来自 chains.json（推断数据）
       };
-      mergeFundamentals(data, snapshot);
+      mergeFundamentals(data, quote);
       if (parseRoute().name !== "company") return;  // 加载途中用户跳走了，别再渲染
       renderCompany(data);
     } catch {
@@ -1141,7 +1145,7 @@ function chainDeviceChips(refs) {
 async function renderIndustryPage(ind) {
   app.innerHTML = "";
   startLoading();
-  const [, g, chain] = await Promise.all([loadFundamentals(), loadGraph(), loadChainData()]);
+  const [, g, chain] = await Promise.all([loadGraph(), loadChainData()]);
   if (parseRoute().name !== "industry") return;
   stopLoading();
   if (!g || !g.industries[ind]) {
@@ -2168,7 +2172,7 @@ const RING_NARROW_MIN = 720;  // 窄屏也至少给这么多边长，否则环�
 async function renderIndustryRingPage(ind) {
   app.innerHTML = "";
   startLoading();
-  const [, g] = await Promise.all([loadFundamentals(), loadGraph()]);
+  const [g] = await Promise.all([loadGraph()]);
   stopLoading();
   if (!g || !g.industries[ind]) {
     app.innerHTML = `<p class="empty">${esc(t("ind.unknown", "没有这个行业。"))}`
@@ -2946,7 +2950,11 @@ function refreshChrome() {
   const searchMEl = document.getElementById("search-m");
   if (searchMEl) searchMEl.placeholder = ph;
   // 页脚走 textContent，得用不带 <b> 的纯文本口径
-  footerEl.textContent = (getLocale() === "zh" && indexData?.disclaimerText) || t("footer", "");
+  const asOf = indexData?.generatedAt
+    ? t("footer.asOf", "数据截至 {d}").replace("{d}", indexData.generatedAt) + " · "
+    : "";
+  footerEl.textContent = asOf
+    + ((getLocale() === "zh" && indexData?.disclaimerText) || t("footer", ""));
   const navHome = document.getElementById("nav-home");
   if (navHome) navHome.textContent = t("nav.home", "首页");
   const navVision = document.getElementById("nav-vision");
@@ -3033,10 +3041,17 @@ async function boot() {
     indexData = { companies: [], totals: {} };
   }
 
-  // 先把行情和二分图一起拉上：行情给卡片首帧带数字（避免"先没数字后补上"的闪动），
-  // graph 给首页的行业概览卡提供环节分布。两份并行，等待时间是两者的较大值。
-  const [snapshot] = await Promise.all([loadFundamentals(), loadGraph()]);
-  indexData.quotes = (snapshot && snapshot.quotes) || {};
+  // graph 给首页的行业概览卡提供环节分布（行情的三个数已随 index.json 下来）。
+  await loadGraph();
+  // 把 index.json 里的轻量行情字段展开成 quotes 映射，下游渲染代码不用改。
+  // 三个数全缺的公司不建条目——卡片本来就会按"没有数字"渲染。
+  indexData.quotes = {};
+  for (const c of indexData.companies || []) {
+    if (c.price == null && c.changePercent == null && c.marketCap == null) continue;
+    indexData.quotes[c.ticker] = {
+      price: c.price, changePercent: c.changePercent, marketCap: c.marketCap,
+    };
+  }
 
   // index.json 里带着数据来源说明（disclaimer），要等它加载完再刷一次 chrome，
   // 否则页脚会一直停留在语言包里的兜底文案

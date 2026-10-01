@@ -5,7 +5,7 @@
 （抓取缓存 + 原始响应）、_verify 1.9M（测试截图）。这些都不该跟着站点上传——
 又慢，又把不该公开的东西一起发出去。
 
-站点本身只需要 4.4 MB：外壳 + 三个 js/css + locales + content + data。
+站点本身只需要约 6 MB：外壳 + 三个 js/css + locales + content + data（含 f/ 行情明细）。
 
 用法：
     python build_dist.py          # 重建 dist/
@@ -22,8 +22,9 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 DIST = os.path.join(ROOT, "dist")
 
 # 站点运行时真正会请求的东西。加东西前先想清楚：前端有没有 fetch 它？
-INCLUDE_FILES = ["index.html", "app.js", "styles.css", "i18n.js", "dist_server.py"]
-INCLUDE_DIRS = ["locales", "content", "data"]
+INCLUDE_FILES = ["index.html", "app.js", "styles.css", "i18n.js",
+                 "dist_server.py", "manifest.webmanifest"]
+INCLUDE_DIRS = ["locales", "content", "data", "assets"]
 
 # 明确排除的（列出来是为了让"为什么不发"有据可查，而不是靠印象）
 EXCLUDE = [".venv", "pipeline", "_verify", "dist", "node_modules", ".git"]

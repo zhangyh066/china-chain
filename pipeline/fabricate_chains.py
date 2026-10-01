@@ -106,7 +106,10 @@ for _up, _down, _role in CHAIN_STEPS:
 def main():
     idx = json.load(open(os.path.join(DATA, "index.json"), encoding="utf-8"))
     graph = json.load(open(os.path.join(DATA, "graph.json"), encoding="utf-8"))
-    quotes = json.load(open(os.path.join(DATA, "fundamentals.json"), encoding="utf-8"))["quotes"]
+    # 市值排序用真实行情的 marketCap。data/ 下已无合并行情文件
+    # （已拆成 index.json 轻量字段 + data/f/ 按需全量），marketCap 就在
+    # index.json 的公司条目里，不用再开一份数据源
+    mc_of = {c["ticker"]: c.get("marketCap") or 0 for c in idx["companies"]}
 
     board_members = graph["boards"]
     board_idx_of = graph["boardIdxOf"]
@@ -118,7 +121,7 @@ def main():
     for c in idx["companies"]:
         by_industry[c["industry"]].append(c["ticker"])
     for k in by_industry:
-        by_industry[k].sort(key=lambda t: -(quotes.get(t) or {}).get("marketCap", 0))
+        by_industry[k].sort(key=lambda t: -mc_of.get(t, 0))
 
     # 环节成员按行业分桶，避免每次都遍历全量成员
     board_by_industry = {}
@@ -196,7 +199,7 @@ def main():
 
         def pick(pool, limit):
             items = sorted(pool.items(), key=lambda kv: (not kv[1][1],
-                                                         -(quotes.get(kv[0]) or {}).get("marketCap", 0)))
+                                                         -mc_of.get(kv[0], 0)))
             out = []
             for other, (role, _evidence, _size) in items[:limit]:
                 # 共同环节存在的话带上它的索引，前端可以显示环节名
@@ -220,7 +223,9 @@ def main():
     with open(os.path.join(DATA, "chains.json"), "w", encoding="utf-8") as f:
         json.dump({
             "schemaVersion": 2,
-            "generatedAt": date.today().isoformat(),
+            # 连线的数据日期跟随 index.json（行情缓存是哪天抓的，推断就基于哪天），
+            # 而不是生成脚本运行的当天
+            "generatedAt": idx.get("generatedAt") or date.today().isoformat(),
             "source": "inferred",
             "note": "上下游关系为模型按产业链步进表 + 环节归属推断的模拟数据，未经任何核实，"
                     "仅用于示意产业链结构，不代表真实的供货关系。",
@@ -234,7 +239,7 @@ def main():
     size = os.path.getsize(os.path.join(DATA, "chains.json"))
     nu = sum(len(v.get("u", [])) for v in links.values())
     nd = sum(len(v.get("d", [])) for v in links.values())
-    print(f"✓ {len(links)} 家有上下游 → data/chains.json（{size/1024:.0f} KB）")
+    print(f"[ok] {len(links)} 家有上下游 → data/chains.json（{size/1024:.0f} KB）")
     print(f"  边数 {nu + nd}（上游 {nu} / 下游 {nd}），平均每家 {(nu+nd)/max(1,len(links)):.1f} 条")
     print(f"  步进表 {len(CHAIN_STEPS)} 条")
     if no_link:

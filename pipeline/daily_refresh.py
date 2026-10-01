@@ -3,7 +3,7 @@
 
 按顺序做五件事，任一步失败立即退出（非 0），后面的步骤不跑：
   1. fetch_real.py --refresh   清掉行情缓存，重新拉（4 个请求：全市场快照 + 三期业绩）
-  2. build_chain.py            用新行情重组 data/*.json（index / graph / fundamentals…）
+  2. build_chain.py            用新行情重组 data/*.json（index / graph / f/ 行情明细…）
   3. fabricate_chains.py       按新市值重推上下游 → data/chains.json
   4. 自检：公司数 / 边数 / 孤立点 / generatedAt 必须是今天
   5. build_dist.py             重建发布目录（含字节级复核）
@@ -60,21 +60,35 @@ def log_line(ok, **kw):
 def self_check():
     idx = load(os.path.join(DATA, "index.json"))
     comp = idx["companies"]
-    fund = load(os.path.join(DATA, "fundamentals.json"))
     chains = load(os.path.join(DATA, "chains.json"))
     links = chains.get("links", {})
     edges = sum(len(v.get("u", [])) + len(v.get("d", [])) for v in links.values())
     orphans = [c["ticker"] for c in comp if c.get("nodeCount") == 0]
-    sim = [t for t, v in fund["quotes"].items() if v.get("simulated")]
     today = date.today().isoformat()
+
+    # 行情明细已拆成 data/f/{代码}.json 一家一份（合并文件下线，见 build_chain.py）
+    fdir = os.path.join(DATA, "f")
+    ffiles = os.listdir(fdir) if os.path.isdir(fdir) else []
+    sim, corrupt = [], []
+    for fn in ffiles:
+        try:
+            q = load(os.path.join(fdir, fn))
+        except Exception:
+            corrupt.append(fn)
+            continue
+        if q.get("simulated"):
+            sim.append(fn[:-5])
+    first_q = load(os.path.join(fdir, ffiles[0])) if ffiles and ffiles[0] not in corrupt else {}
 
     problems = []
     if idx.get("generatedAt") != today:
         problems.append(f"generatedAt={idx.get('generatedAt')} 不是今天")
     if len(comp) < 4000:
         problems.append(f"公司数 {len(comp)} 异常（应约 4071）")
-    if len(fund["quotes"]) != len(comp):
-        problems.append(f"行情条数 {len(fund['quotes'])} != 公司数 {len(comp)}")
+    if len(ffiles) != len(comp):
+        problems.append(f"行情文件 {len(ffiles)} != 公司数 {len(comp)}")
+    if corrupt:
+        problems.append(f"有 {len(corrupt)} 个行情文件损坏：{corrupt[:5]}")
     if sim:
         problems.append(f"有 {len(sim)} 家是模拟行情（应为 0）：{sim[:5]}")
     if orphans:
@@ -83,7 +97,7 @@ def self_check():
         problems.append(f"边数 {edges} 异常（应约 2.6 万）")
 
     print(f"\n=== 自检 ===")
-    print(f"  公司 {len(comp)} · 行业 {len(idx.get('industries', []))} · "
+    print(f"  公司 {len(comp)} · 行业 {len(idx.get('industryList', []))} · "
           f"环节 {idx.get('totals', {}).get('boards', '?')} · 边 {edges} · "
           f"孤立点 {len(orphans)} · 模拟行情 {len(sim)} · generatedAt {idx.get('generatedAt')}")
     if problems:
@@ -93,7 +107,7 @@ def self_check():
     return True, {
         "companies": len(comp), "edges": edges,
         "orphans": len(orphans), "links": len(links),
-        "asOf": fund["quotes"][comp[0]["ticker"]].get("asOf"),
+        "asOf": first_q.get("asOf"),
     }
 
 

@@ -1,0 +1,16 @@
+{
+  "name": "链谱 ChainAtlas",
+  "short_name": "链谱",
+  "description": "A 股上市公司产业链知识图谱：4,071 家公司、24 个申万一级行业、199 个产业链环节。",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F5F3EE",
+  "theme_color": "#13375E",
+  "icons": [
+    { "src": "./assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./assets/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

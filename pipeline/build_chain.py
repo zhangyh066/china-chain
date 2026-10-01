@@ -5,10 +5,16 @@
 取代原来的 build.py（那个只服务 159 家）。
 
 产出：
-  data/index.json        3889 家：身份 + 申万一级行业 + 所属产业链环节
-  data/fundamentals.json 3889 家真实行情财务（由 fetch_real.make_quote 组装）
+  data/index.json        4071 家：身份 + 申万一级行业 + 所属产业链环节
+                         + 价格/涨跌幅/市值三个轻量字段（首页卡片首帧用）
+  data/f/{代码}.json     每家一份完整行情财务（约 2 KB，公司页按需加载）
   data/graph.json        二分图成员表：行业 → 公司、环节 → 公司
-  data/{代码}.json       只给有手工供应链的那 159 家（其余由前端从 graph.json 推导）
+  data/{代码}.json       只给有手工供应链的 159 家（其余由前端从 graph.json 推导）
+
+为什么拆成"index 轻量字段 + f/ 按需全量"：
+  1.6 MB 的合并 fundamentals.json 里，首页/行业页/环图只用得到每家的
+  价格、涨跌幅、市值三个数。把这三个字段并进 index.json（约 +130 KB），
+  首屏 2.7 MB → 1.2 MB；完整财务拆成 f/ 下一 Company 页按需各拉一份。
 
 为什么 graph.json 单列一份：
   全景区块要的是"每个行业有哪些公司、每家公司属于哪些环节"，
@@ -78,19 +84,35 @@ def main():
     from fetch_real import load_raw, quote_for          # noqa: E402
     from dataset import COMPANIES as CURATED, LINKS     # noqa: E402
 
-    spot, yjbb = load_raw()
-
     # ---- 行情 ----
-    print("① 组装行情（用缓存，不联网）")
-    quotes, no_quote = {}, []
-    for c in companies:
-        q = quote_for(c["ticker"], spot, yjbb)
-        if q:
-            quotes[c["ticker"]] = q
-        else:
-            no_quote.append(c["ticker"])
-    print(f"   取到行情 {len(quotes)} / {len(companies)} 家"
-          + (f"（缺 {len(no_quote)}：{no_quote[:5]}）" if no_quote else ""))
+    # 数据源暂时不可达、只想改筛选/推断口径重跑时，可设 QUOTES_FILE=<旧版合并文件>
+    # 直接沿用其中行情（"某次抓取失败就保留上一版"）。日常管线不设置这个变量。
+    global GENERATED_AT
+    quotes_override = os.environ.get("QUOTES_FILE")
+    if quotes_override:
+        cached = load_json(quotes_override) or {}
+        quotes = cached.get("quotes", {})
+        # "截至日期"以行情缓存的日期为准——重建数据文件不等于数据变新了
+        GENERATED_AT = cached.get("generatedAt") or date.today().isoformat()
+        no_quote = [c["ticker"] for c in companies if c["ticker"] not in quotes]
+        print(f"① 沿用行情缓存 {os.path.basename(quotes_override)}"
+              f"（{len(quotes)} 家，截至 {GENERATED_AT}）")
+        if no_quote:
+            print(f"   缺行情 {len(no_quote)} 家：{no_quote[:5]}")
+    else:
+        spot, yjbb = load_raw()
+        GENERATED_AT = (load_json(os.path.join(REAL, "fundamentals.json")) or {}).get(
+            "generatedAt") or date.today().isoformat()
+        print("① 组装行情（用缓存，不联网）")
+        quotes, no_quote = {}, []
+        for c in companies:
+            q = quote_for(c["ticker"], spot, yjbb)
+            if q:
+                quotes[c["ticker"]] = q
+            else:
+                no_quote.append(c["ticker"])
+        print(f"   取到行情 {len(quotes)} / {len(companies)} 家"
+              + (f"（缺 {len(no_quote)}：{no_quote[:5]}）" if no_quote else ""))
 
     # ---- 行业与环节的成员表 ----
     industries, boards = {}, {}
@@ -112,6 +134,7 @@ def main():
     idx_companies = []
     for c in companies:
         t = c["ticker"]
+        q = quotes.get(t) or {}
         idx_companies.append({
             "ticker": t,
             "name": c["name"],
@@ -121,6 +144,10 @@ def main():
             "board": board_of(t),
             "exchange": exchange_of(t),
             "curated": t in {x[0] for x in CURATED},   # 有没有手工供应链
+            # 首页/行业页卡片首帧只要这三个数；完整财务在 data/f/ 按需加载
+            "price": q.get("price"),
+            "changePercent": q.get("changePercent"),
+            "marketCap": q.get("marketCap"),
         })
 
     totals = {
@@ -157,14 +184,18 @@ def main():
     print(f"   {size_idx/1024:.0f} KB，{len(idx_companies)} 家，"
           f"{len(industry_list)} 个行业，{len(board_list)} 个环节")
 
-    # ---- fundamentals.json ----
-    print("③ 写 fundamentals.json")
-    size_fund = write_json("fundamentals.json", {
-        "generatedAt": GENERATED_AT,
-        "count": len(quotes),
-        "quotes": quotes,
-    })
-    print(f"   {size_fund/1024:.0f} KB")
+    # ---- data/f/{代码}.json：完整行情财务，公司页按需加载 ----
+    print("③ 写 f/ 行情明细")
+    fdir = os.path.join(DATA, "f")
+    os.makedirs(fdir, exist_ok=True)
+    size_f = 0
+    for t, q in quotes.items():
+        path = os.path.join(fdir, f"{t}.json")
+        with open(path, "w", encoding="utf-8") as fp:
+            json.dump(q, fp, ensure_ascii=False, separators=(",", ":"))
+            fp.write("\n")
+        size_f += os.path.getsize(path)
+    print(f"   {len(quotes)} 个文件，共 {size_f/1024:.0f} KB")
 
     # ---- graph.json（二分图成员表）----
     print("④ 写 graph.json")
@@ -251,7 +282,7 @@ def main():
     print(f"产业链环节        {totals['boards']}")
     print(f"二分图边数        {totals['edges']}")
     print(f"有手工供应链的     {totals['curated']}")
-    print(f"data/ 总大小      {(size_idx+size_fund+size_graph)/1024:.0f} KB（不含 159 个卡片）")
+    print(f"data/ 总大小      {(size_idx+size_f+size_graph)/1024:.0f} KB（不含 159 个卡片）")
     print("=" * 58)
     return 0
 
