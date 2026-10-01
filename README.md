@@ -1,6 +1,8 @@
 # 链谱 ChainAtlas
 
-**在线体验：https://0ebad93a143e456cbd2e30cb01966249.app.workbuddy.host/#/vision**
+**在线体验：**
+- **https://zhangyh066.github.io/china-chain/**（GitHub Pages，CI 自动部署：验证通过才发布）
+- https://0ebad93a143e456cbd2e30cb01966249.app.workbuddy.host/#/vision（workbuddy 托管）
 
 A 股上市公司产业链知识图谱：**4,071 家公司**、**24 个申万一级行业**、**199 个产业链环节**。
 零框架、零运行时依赖、零构建步骤——原生 ES Module + 静态 JSON，浏览器直接运行。
@@ -29,6 +31,8 @@ A 股上市公司产业链知识图谱：**4,071 家公司**、**24 个申万一
 - **响应式**：移动端专用布局与悬浮搜索，13 处 `prefers-reduced-motion` 适配
 - **PWA**：可安装为独立应用（`manifest.webmanifest` + 程序化生成图标）
 - **数据日期可见**：页脚标注"数据截至 YYYY-MM-DD"
+- **搜索引擎可读**：构建期为 24 个行业 + 4,071 家公司预渲染文字版静态页（`pages/`），
+  附 `sitemap.xml`（4,096 个地址）与 `robots.txt`；分享链接带 OG 预览卡片
 - Canvas 图表用固定种子渲染，同一数据每次布局一致
 
 ## 快速开始

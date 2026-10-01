@@ -50,8 +50,8 @@ const evaluate = async (expr) => {
 };
 async function navigate(url) {
   // hash 路由是同一文档内的跳转，不会触发 load 事件——只有跨文档跳转才等 load
-  const sameDoc = url.replace(/^https?:\/\/[^/]+/, '') === '' ? false
-    : (await evaluate('location.href')).startsWith(url.split('#')[0]) && url.includes('#');
+  const sameDoc = url.includes('#') &&
+    String(await evaluate('location.href')).startsWith(url.split('#')[0]);
   if (!sameDoc) {
     const loaded = new Promise((res) => {
       const h = (ev) => {
@@ -61,11 +61,21 @@ async function navigate(url) {
       ws.addEventListener('message', h);
     });
     await send('Page.navigate', { url });
-    await Promise.race([loaded, sleep(6000)]);
+    await Promise.race([loaded, sleep(8000)]);
   } else {
     await evaluate(`location.href = ${JSON.stringify(url)}`);
   }
-  await sleep(1800);
+}
+
+// 等页面真的渲染出东西，而不是赌固定 sleep——慢网络（线上/CDN 冷启动）下尤其重要
+async function waitFor(expr, ms = 15000) {
+  const t0 = Date.now();
+  for (;;) {
+    const v = await evaluate(expr).catch(() => false);
+    if (v) return v;
+    if (Date.now() - t0 > ms) return false;
+    await sleep(300);
+  }
 }
 
 const results = [];
@@ -80,7 +90,11 @@ await send('Network.enable');
 
 console.log('— 首页 —');
 await navigate(BASE + '#/');
+const homeReady = await waitFor(`document.querySelectorAll('.hero-stat b').length === 4
+  && (document.getElementById('market-ring')?._segs || []).length > 0`, 20000);
+check('首页渲染完成', homeReady === true);
 const asOf = await evaluate(`fetch('./data/index.json').then(r => r.json()).then(d => d.generatedAt || '')`);
+await sleep(600);   // 等 canvas 画完（同步绘制，留一帧余量）
 const home = JSON.parse(await evaluate(`JSON.stringify({
   heroStats: document.querySelectorAll('.hero-stat b').length,
   ring: (() => { const cv = document.getElementById('market-ring'); return cv ? {
@@ -101,20 +115,19 @@ check('footer 显示数据截至', home.footer.includes(`数据截至 ${asOf}`),
 check('口径文案三层标注在', home.disclaimer === true);
 
 console.log('— 搜索跳转：比亚迪 —');
-const search = JSON.parse(await evaluate(`(async () => {
+await evaluate(`(() => {
   const s = document.getElementById('search');
   s.value = '比亚迪'; s.dispatchEvent(new Event('input', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 400));
   s.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-  await new Promise(r => setTimeout(r, 3000));
-  return JSON.stringify({
-    hash: location.hash,
-    title: document.querySelector('.pr-title')?.textContent || null,
-    metrics: document.querySelectorAll('.pr-metrics .metric').length,
-    realTag: document.body.textContent.includes('真实行情'),
-    mapNote: (document.querySelector('.vcm-note, .map-note, [class*=note]') || {}).textContent || ''
-  });
-})()`));
+})()`);
+const companyReady = await waitFor(`location.hash === '#/c/002594' && !!document.querySelector('.pr-title')`, 25000);
+check('公司页渲染完成', companyReady === true);
+const search = JSON.parse(await evaluate(`JSON.stringify({
+  hash: location.hash,
+  title: document.querySelector('.pr-title')?.textContent || null,
+  metrics: document.querySelectorAll('.pr-metrics .metric').length,
+  realTag: document.body.textContent.includes('真实行情')
+})`));
 check('跳到公司页', search.hash === '#/c/002594', search.hash);
 check('公司名正确', search.title && search.title.includes('比亚迪'), search.title);
 check('十项财务指标（f/ 按需加载）', search.metrics === 10, `实际 ${search.metrics}`);
@@ -122,6 +135,7 @@ check('标注真实行情', search.realTag === true);
 
 console.log('— 行业页 —');
 await navigate(BASE + '#/i/%E7%94%B5%E5%AD%90');
+await waitFor(`document.querySelectorAll('.ind-stat b').length === 4`, 20000);
 const ind = JSON.parse(await evaluate(`JSON.stringify({
   title: document.querySelector('.ind-title')?.textContent || '',
   stats: document.querySelectorAll('.ind-stat b').length,
@@ -133,6 +147,8 @@ check('行业页公司卡片', ind.cards > 0 && ind.cardNums > 0, `${ind.cards} 
 
 console.log('— 全景图谱 —');
 await navigate(BASE + '#/worldmap');
+await waitFor(`document.querySelectorAll('canvas').length === 24`, 20000);
+await sleep(800);
 const wm = JSON.parse(await evaluate(`JSON.stringify({
   canvases: [...document.querySelectorAll('canvas')].map(cv => {
     try { return cv.toDataURL().length; } catch { return 0; }
@@ -143,6 +159,7 @@ check('24 张画布且都有内容', wm.canvases.length === 24 && wm.canvases.ev
 
 console.log('— 观点页 —');
 await navigate(BASE + '#/vision');
+await waitFor(`!!document.querySelector('#app h2, #app h1')`, 15000);
 const vision = await evaluate(`document.querySelector('#app h2, #app h1')?.textContent?.length || 0`);
 check('观点页 markdown 渲染', vision > 0);
 
