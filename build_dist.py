@@ -23,8 +23,14 @@ DIST = os.path.join(ROOT, "dist")
 
 # 站点运行时真正会请求的东西。加东西前先想清楚：前端有没有 fetch 它？
 INCLUDE_FILES = ["index.html", "app.js", "styles.css", "i18n.js",
-                 "dist_server.py", "manifest.webmanifest"]
-INCLUDE_DIRS = ["locales", "content", "data", "assets"]
+                 "dist_server.py", "manifest.webmanifest",
+                 "sitemap.xml", "robots.txt"]
+INCLUDE_DIRS = ["locales", "content", "data", "assets", "pages"]
+
+# 分享卡片 / sitemap 里的绝对地址。生产部署时应通过环境变量覆盖成真实域名：
+#   SITE_BASE=https://example.com/ python build_dist.py
+SITE_BASE = os.environ.get("SITE_BASE", "").rstrip("/") \
+    or "https://0ebad93a143e456cbd2e30cb01966249.app.workbuddy.host"
 
 # 明确排除的（列出来是为了让"为什么不发"有据可查，而不是靠印象）
 EXCLUDE = [".venv", "pipeline", "_verify", "dist", "node_modules", ".git"]
@@ -80,10 +86,11 @@ def build(check_only=False):
         p = os.path.join(staging, f)
         if os.path.exists(p):
             txt = open(p, encoding="utf-8").read()
-            if "__BUILD__" in txt:
-                open(p, "w", encoding="utf-8", newline="\n").write(txt.replace("__BUILD__", build_id))
+            n = txt.replace("__BUILD__", build_id).replace("__SITE_BASE__", SITE_BASE)
+            if n != txt:
+                open(p, "w", encoding="utf-8", newline="\n").write(n)
                 built.append(f)
-    print(f"  版本号注入 __BUILD__ → {build_id}（{', '.join(built) or '无文件含占位符'}）")
+    print(f"  版本号注入 __BUILD__ → {build_id}；__SITE_BASE__ → {SITE_BASE}（{', '.join(built) or '无文件含占位符'}）")
 
     if check_only:
         shutil.rmtree(staging)
@@ -101,9 +108,10 @@ def build(check_only=False):
             a = os.path.join(dirpath, f)
             rel = os.path.relpath(a, DIST)
             if rel in ("index.html", "app.js", "i18n.js"):
-                # 这三个文件被注入过版本号，与源"应该"不同；只验证占位符确实被换掉了
-                if "__BUILD__" in open(a, encoding="utf-8", errors="replace").read():
-                    bad.append(rel + "（版本号未注入）")
+                # 这三个文件被注入过版本号/站点地址，与源"应该"不同；只验证占位符确实被换掉了
+                txt = open(a, encoding="utf-8", errors="replace").read()
+                if "__BUILD__" in txt or "__SITE_BASE__" in txt:
+                    bad.append(rel + "（占位符未注入）")
                 continue
             b = os.path.join(ROOT, rel)
             if not os.path.exists(b) or not filecmp.cmp(a, b, shallow=False):
