@@ -16,6 +16,9 @@ _tmp_cache.py
 _verify/*
 !_verify/*.mjs
 
+# 公司介绍的抓取缓存（可由 data/p/ 直接重建，不必入库）
+pipeline/real/profiles/
+
 # 系统/编辑器杂项
 .DS_Store
 Thumbs.db

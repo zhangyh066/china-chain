@@ -175,6 +175,10 @@ def quote1(code):
     return load(f"f/{code}.json") or {}
 
 
+def profile1(code):
+    return load(f"p/{code}.json") or {}
+
+
 def company_url(code):
     return f"c/{code}.html"
 
@@ -245,14 +249,36 @@ def company_page(c):
 
     ind = c["industry"]
     peers = c.get("industryPeers")
+    # 公司介绍（同花顺主营业务 + 巨潮概况 + 东财主营构成，见 fetch_profiles.py）
+    pf = profile1(t)
+    pf_html = ""
+    if len(pf) > 1:
+        pf_facts = []
+        if pf.get("listed"):
+            pf_facts.append(f"<span class='tag'>上市 {esc(pf['listed'])}</span>")
+        if pf.get("csrcIndustry"):
+            pf_facts.append(f"<span class='tag'>{esc(pf['csrcIndustry'])}</span>")
+        segs = (pf.get("segments") or [])[:5]
+        seg_rows = "".join(
+            f"<tr><td>{esc(s['item'])}</td>"
+            f"<td class='num'>{s['revenueRatio'] * 100:.1f}%</td>"
+            f"<td class='num'>{s['grossMargin'] * 100:.1f}%</td></tr>" for s in segs)
+        pf_html = f"""
+<h2>公司介绍<span class="sub">主营业务：同花顺 · 公司概况：巨潮资讯 · 主营构成：东方财富</span></h2>
+{f"<div class='tags'>{''.join(pf_facts)}</div>" if pf_facts else ""}
+{f"<p>{esc(pf['business'])}</p>" if pf.get("business") else ""}
+{f"<p class='note'>主要产品：{esc(pf['products'])}</p>" if pf.get('products') else ""}
+{f"<table><tr><th>主营构成</th><th class='num'>收入占比</th><th class='num'>毛利率</th></tr>{seg_rows}</table>" if segs else ""}
+{f"<details><summary>经营范围</summary><p>{esc(pf['scope'])}</p></details>" if pf.get('scope') else ""}
+"""
     body = f"""
 <h1>{esc(c['name'])}<span class="tk">{esc(t)} · {esc(c.get('exchange', ''))}{esc(c.get('board', ''))}</span></h1>
 <div class="tags"><a class="tag sector" href="../i/{esc(ind)}.html">{esc(ind)}</a>
 <span class="tag">{esc(c.get('board', ''))}</span>
 {'<span class="tag">手工梳理价值链</span>' if c.get('curated') else ''}</div>
 {metrics_html}
-<h2>所属产业链环节<span class="sub">真实公开归类 · 同属一条产业链 ≠ 谁给谁供货</span></h2>
-<div class="chips">{''.join(f"<span class='chip'>{esc(b)}</span>" for b in boards) or '<span class=note>无</span>'}</div>
+{pf_html}
+<h2>所属产业链环节<span class="sub">真实公开归类 · 同属一条产业链 ≠ 谁给谁供货</span></h2><div class="chips">{''.join(f"<span class='chip'>{esc(b)}</span>" for b in boards) or '<span class=note>无</span>'}</div>
 {'' if not peers else f'<p class="note">同行业有 {peers} 家公司在产业链图谱中与本司共享环节。</p>'}
 <h2>上下游关系<span class="sub">模型推断的模拟数据，未经核实</span></h2>
 <div class="warn">以下连线是按行业步进表 + 环节归属<b>推断的结构示意</b>，不代表真实的供货关系。</div>

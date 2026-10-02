@@ -126,12 +126,15 @@ const search = JSON.parse(await evaluate(`JSON.stringify({
   hash: location.hash,
   title: document.querySelector('.pr-title')?.textContent || null,
   metrics: document.querySelectorAll('.pr-metrics .metric').length,
-  realTag: document.body.textContent.includes('真实行情')
+  realTag: document.body.textContent.includes('真实行情'),
+  intro: !!document.querySelector('.intro-sec'),
+  introBiz: document.querySelector('.intro-biz')?.textContent?.slice(0, 30) || null
 })`));
 check('跳到公司页', search.hash === '#/c/002594', search.hash);
 check('公司名正确', search.title && search.title.includes('比亚迪'), search.title);
 check('十项财务指标（f/ 按需加载）', search.metrics === 10, `实际 ${search.metrics}`);
 check('标注真实行情', search.realTag === true);
+check('公司介绍块（p/ 按需加载）', search.intro === true, search.introBiz);
 
 console.log('— 行业页 —');
 await navigate(BASE + '#/i/%E7%94%B5%E5%AD%90');

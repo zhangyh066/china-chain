@@ -71,6 +71,15 @@ check("pages/c 公司页数 = 公司数", n_company_pages == len(comp),
       f"{n_company_pages} vs {len(comp)}")
 check("pages/i 行业页数 = 24", n_industry_pages == 24, str(n_industry_pages))
 
+# 公司介绍（data/p/，pipeline/fetch_profiles.py 的产出）：应全量覆盖公司数
+pdir = os.path.join(DATA, "p")
+pfiles = os.listdir(pdir) if os.path.isdir(pdir) else []
+check("data/p/ 公司介绍已生成", len(pfiles) == len(comp),
+      f"{len(pfiles)} vs {len(comp)}")
+if pfiles:
+    sample = load(os.path.join(pdir, "300750.json")) or {}
+    check("公司介绍含主营业务", bool(sample.get("business")), sample.get("ticker", "?"))
+
 for tk, name in [("300750", "宁德时代"), ("002594", "比亚迪"), ("600519", "贵州茅台")]:
     p = os.path.join(PAGES, "c", f"{tk}.html")
     html = open(p, encoding="utf-8").read() if os.path.exists(p) else ""

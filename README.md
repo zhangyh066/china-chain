@@ -88,12 +88,16 @@ china-chain/
 │   ├── index.json          4,071 家公司索引：身份 + 行业 + 环节数
 │   │                       + 价格/涨跌幅/市值（首屏卡片首帧用）
 │   ├── f/{代码}.json       完整行情财务，公司页按需加载（一家约 2 KB）
+│   ├── p/{代码}.json       公司介绍：主营业务/经营范围/主营构成
+│   │                       （同花顺 + 巨潮 + 东财，fetch_profiles.py 生成）
 │   ├── graph.json          行业→公司、环节→公司二分图成员表
 │   ├── chains.json         推断的上下游连线（仅公司页按需加载）
 │   ├── chain/chain.json    行业步进表等链数据
 │   └── {代码}.json         151 家手工价值链公司卡片
 └── pipeline/           数据管线（fetch → select → build）
     ├── fetch_real.py       拉取行情/财务（akshare，全市场仅 4 次请求）
+    ├── fetch_profiles.py   抓取公司介绍（同花顺主营业务 + 巨潮概况 + 东财主营构成，
+    │                       一家一份 data/p/，断点续抓）
     ├── fetch_industries.py 拉取申万一级行业成分股
     ├── fetch_concepts.py   拉取产业链概念成分股
     ├── chain_concepts.py   产业链概念白名单（规则本体）

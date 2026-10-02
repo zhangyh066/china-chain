@@ -378,6 +378,16 @@ function loadQuote(ticker) {
   }
   return quoteCache.get(ticker);
 }
+// 公司介绍（主营业务/经营范围/主营构成），同样一家一份、按需加载
+const profileCache = new Map();
+function loadProfile(ticker) {
+  if (!profileCache.has(ticker)) {
+    profileCache.set(ticker, getJSON(`./data/p/${encodeURIComponent(ticker)}.json`)
+      .then((q) => (q && typeof q === "object" ? q : null))
+      .catch(() => null));
+  }
+  return profileCache.get(ticker);
+}
 // 把完整行情挂到公司页数据上。只有锚点渲染行情指标，上下游卡片不显示数字，
 // 所以它们不用拉。
 function mergeFundamentals(data, quote) {
@@ -444,10 +454,11 @@ async function route() {
       // 只加载这三个：4,071 家里只有 151 家有独立的价值链卡片，
       // 其余公司的信息全部从 index.json（身份/行业）+ graph.json（所属环节/同行）推导
       const info = (indexData?.companies || []).find((c) => c.ticker === ticker);
-      const [, , quote, chain] = await Promise.all([
+      const [, , quote, chain, profile] = await Promise.all([
         loadGraph(), loadChains(),
         loadQuote(ticker),          // 完整财务指标，一家一份，按需
         loadChainData(),
+        loadProfile(ticker),        // 公司介绍，一家一份，按需
       ]);
       let card = null;
       if (info && info.curated) {
@@ -465,6 +476,7 @@ async function route() {
         nodes: chainNodes(ticker),     // 上下游来自 chains.json（推断数据）
       };
       mergeFundamentals(data, quote);
+      data.profile = profile;   // 公司介绍（可能为 null，渲染层兜底）
       if (parseRoute().name !== "company") return;  // 加载途中用户跳走了，别再渲染
       renderCompany(data);
     } catch {
@@ -1640,11 +1652,50 @@ function drawMap() {
   fitMap();
 }
 
+// 公司介绍块：主营业务 + 主营构成表 + 经营范围（折叠）。数据来自
+// data/p/{代码}.json（同花顺主营业务 + 巨潮公司概况 + 东财主营构成），
+// 抓取脚本 pipeline/fetch_profiles.py。没有数据就不渲染这个块。
+function introHTML(pf) {
+  if (!pf) return "";
+  const facts = [];
+  if (pf.listed) facts.push(`<span class="tag">${esc(t("intro.listed", "上市"))} ${esc(pf.listed)}</span>`);
+  if (pf.csrcIndustry) facts.push(`<span class="tag">${esc(pf.csrcIndustry)}</span>`);
+  if (pf.website) {
+    const url = /^https?:/.test(pf.website) ? pf.website : `https://${pf.website}`;
+    facts.push(`<a class="tag" href="${esc(url)}" target="_blank" rel="noopener">${esc(t("intro.website", "官网"))} ↗</a>`);
+  }
+  const segs = (pf.segments || []).slice(0, 5);
+  const segRows = segs.map((s) => `<tr><td>${esc(s.item)}</td>`
+    + `<td class="num">${esc(fmtPct(s.revenueRatio * 100, false))}</td>`
+    + `<td class="num">${esc(fmtPct(s.grossMargin * 100, false))}</td></tr>`).join("");
+  return `
+    <section class="sec intro-sec">
+      <div class="sec-head">
+        <h2 class="sec-title">${esc(t("intro.title", "公司介绍"))}</h2>
+        <span class="sec-sub">${esc(t("intro.source", "主营业务：同花顺 · 公司概况：巨潮资讯 · 主营构成：东方财富"))}</span>
+        <span class="sec-rule"></span>
+      </div>
+      ${facts.length ? `<div class="tags">${facts.join("")}</div>` : ""}
+      ${pf.business ? `<p class="intro-biz">${esc(pf.business)}</p>` : ""}
+      ${pf.products ? `<p class="note">${esc(t("intro.products", "主要产品"))}：${esc(pf.products)}</p>` : ""}
+      ${segs.length ? `
+      <table class="intro-segs">
+        <tr><th>${esc(t("intro.segItem", "主营构成"))}</th>
+            <th class="num">${esc(t("intro.revenueRatio", "收入占比"))}</th>
+            <th class="num">${esc(t("intro.grossMargin", "毛利率"))}</th></tr>
+        ${segRows}
+      </table>
+      <p class="note">${esc(t("intro.segPeriod", "报告期 {d}").replace("{d}", segs[0].period || ""))}</p>` : ""}
+      ${pf.scope ? `<details class="intro-scope"><summary>${esc(t("intro.scope", "经营范围"))}</summary><p>${esc(pf.scope)}</p></details>` : ""}
+    </section>`;
+}
+
 function renderCompany(data) {
   // 首次进入按视口宽度选默认值：宽屏先看全貌，窄屏保持字号可读
   if (!mapZoom) mapZoom = window.innerWidth >= 900 ? "fit" : "full";
   const a = data.anchor;
   const f = a.fundamentals;
+  const pf = data.profile || null;
   const nodes = data.nodes || [];
   const upN = nodes.filter((n) => n.relation === "upstream").length;
   const downN = nodes.length - upN;
@@ -1697,6 +1748,7 @@ function renderCompany(data) {
         <div class="chain-bar"><span class="chain-seg up" style="width:${upPct.toFixed(1)}%"></span><span class="chain-seg down" style="width:${(100 - upPct).toFixed(1)}%"></span></div>
       </div>` : ""}
     </header>
+    ${introHTML(pf)}
 
     <section class="sec">
       <div class="sec-head">
