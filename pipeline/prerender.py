@@ -107,6 +107,9 @@ CSS = """
           padding: 0 10px; margin: 0 6px 6px 0; font-size: 14px;
           color: var(--ink); text-decoration: none; background: #fff; }
   .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .intro-seg-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 8px 40px; }
+  .intro-seg-title { font-size: 13px; color: var(--faint); margin-top: 12px; letter-spacing: .05em; }
+  .intro-seg-title .cf-meta, .cf-meta { font-size: 12px; color: var(--faint); margin-left: 10px; }
   @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
   .rel-list { margin: 0; padding: 0; list-style: none; }
   .rel-list li { padding: 7px 0; border-bottom: 1px dashed var(--gold-line); font-size: 15px; }
@@ -258,17 +261,32 @@ def company_page(c):
             pf_facts.append(f"<span class='tag'>上市 {esc(pf['listed'])}</span>")
         if pf.get("csrcIndustry"):
             pf_facts.append(f"<span class='tag'>{esc(pf['csrcIndustry'])}</span>")
-        segs = (pf.get("segments") or [])[:5]
-        seg_rows = "".join(
-            f"<tr><td>{esc(s['item'])}</td>"
-            f"<td class='num'>{s['revenueRatio'] * 100:.1f}%</td>"
-            f"<td class='num'>{s['grossMargin'] * 100:.1f}%</td></tr>" for s in segs)
+        segs = (pf.get("segmentsBy") or {})
+        prod = (segs.get("product") or pf.get("segments") or [])[:5]
+        region = (segs.get("region") or [])[:5]
+
+        def seg_table(title, rows):
+            if not rows:
+                return ""
+            body = "".join(
+                f"<tr><td>{esc(s['item'])}</td>"
+                f"<td class='num'>{s['revenueRatio'] * 100:.1f}%</td>"
+                f"<td class='num'>{s['grossMargin'] * 100:.1f}%</td></tr>" for s in rows)
+            return (f"<div class='intro-seg-col'><div class='intro-seg-title'>{esc(title)}"
+                    f"<span class='cf-meta'>{esc(rows[0].get('period', ''))}</span></div>"
+                    f"<table><tr><th>主营构成</th><th class='num'>收入占比</th><th class='num'>毛利率</th></tr>"
+                    f"{body}</table></div>")
+
+        seg_block = ""
+        if prod or region:
+            seg_block = ("<div class='intro-seg-grid'>" + seg_table("按产品", prod)
+                         + seg_table("按地区", region) + "</div>")
         pf_html = f"""
 <h2>公司介绍<span class="sub">主营业务：同花顺 · 公司概况：巨潮资讯 · 主营构成：东方财富</span></h2>
 {f"<div class='tags'>{''.join(pf_facts)}</div>" if pf_facts else ""}
 {f"<p>{esc(pf['business'])}</p>" if pf.get("business") else ""}
 {f"<p class='note'>主要产品：{esc(pf['products'])}</p>" if pf.get('products') else ""}
-{f"<table><tr><th>主营构成</th><th class='num'>收入占比</th><th class='num'>毛利率</th></tr>{seg_rows}</table>" if segs else ""}
+{seg_block}
 {f"<details><summary>经营范围</summary><p>{esc(pf['scope'])}</p></details>" if pf.get('scope') else ""}
 """
     body = f"""

@@ -30,6 +30,7 @@ So what is real and what is inferred is written out, layer by layer:
 
 - Company names, tickers, SW level-1 sectors, chain-link membership — **real, public**
 - Quotes and financials (price, change, market cap, trailing P/E, gross and net margin, revenue growth) — **real public data** (East Money · akshare, as of 2026-09-22)
+- Company profiles (business, key products, business scope, revenue breakdown, listing and registration facts) — **real public data** (THS · CNINFO · East Money, covering all 4,071 companies)
 - Upstream/downstream edges — **inferred from real industry structure, illustrative and unverified**. Sharing a chain link is not a supplier relationship.
 
 **None of it is an investment basis.**

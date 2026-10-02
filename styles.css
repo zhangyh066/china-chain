@@ -481,6 +481,9 @@ button { font-family: inherit; font-size: inherit; }
   border-collapse: collapse; margin-top: 10px; font-size: 13.5px;
   font-variant-numeric: tabular-nums; min-width: 380px;
 }
+.intro-seg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 8px 40px; }
+.intro-seg-title { font-size: 12.5px; color: var(--text-faint); margin-top: 12px; letter-spacing: .05em; }
+.intro-seg-title .cf-meta { margin-left: 10px; }
 .intro-segs th, .intro-segs td {
   text-align: left; padding: 5px 14px 5px 0;
   border-bottom: 1px solid var(--gold-line, #E0D3B4);

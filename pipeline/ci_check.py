@@ -79,6 +79,14 @@ check("data/p/ 公司介绍已生成", len(pfiles) == len(comp),
 if pfiles:
     sample = load(os.path.join(pdir, "300750.json")) or {}
     check("公司介绍含主营业务", bool(sample.get("business")), sample.get("ticker", "?"))
+    # Python 的 json.dump 会把 NaN 写成字面量——浏览器 JSON.parse 直接炸，必须拦住
+    nan_files = []
+    for fn in pfiles[:]:
+        with open(os.path.join(pdir, fn), encoding="utf-8") as fh:
+            if "NaN" in fh.read() or "Infinity" in fh.read():
+                nan_files.append(fn)
+    check("data/p/ 无 NaN/Infinity 字面量", not nan_files,
+          f"{len(nan_files)} 个文件污染：{nan_files[:3]}")
 
 for tk, name in [("300750", "宁德时代"), ("002594", "比亚迪"), ("600519", "贵州茅台")]:
     p = os.path.join(PAGES, "c", f"{tk}.html")

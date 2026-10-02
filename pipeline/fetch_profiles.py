@@ -107,23 +107,38 @@ def grab(ak, code):
     zygc = fetch_with_retry("东财主营构成",
                             lambda: ak.stock_zygc_em(
                                 symbol=("SH" if code.startswith("6") else "SZ") + code))
-    segs = []
-    if zygc is not None and len(zygc):
-        latest = zygc[zygc["报告日期"] == zygc["报告日期"].max()]
-        prod = latest[latest["分类类型"] == "按产品分类"]
-        for _, r in prod.iterrows():
+
+    def pick_segs(df, class_type, cap):
+        sub = df[df["分类类型"] == class_type]
+        out = []
+        for _, r in sub.iterrows():
             try:
-                segs.append({
+                # pandas 的 NaN 是 truthy，"or 0" 拦不住——必须显式判空，
+                # 否则 json.dump 会写出 NaN 字面量（浏览器 JSON.parse 直接炸）
+                def num(v):
+                    f = float(v)
+                    return f if f == f and abs(f) != float("inf") else 0.0   # NaN != NaN
+                out.append({
                     "item": str(r.get("主营构成") or ""),
-                    "revenueRatio": round(float(r.get("收入比例") or 0), 4),
-                    "grossMargin": round(float(r.get("毛利率") or 0), 4),
+                    "revenueRatio": round(num(r.get("收入比例")), 4),
+                    "grossMargin": round(num(r.get("毛利率")), 4),
                     "period": str(r.get("报告日期") or ""),
                 })
             except (TypeError, ValueError):
                 continue
-        segs.sort(key=lambda x: -x["revenueRatio"])
-    if segs:
-        rec["segments"] = segs[:8]
+        out.sort(key=lambda x: -x["revenueRatio"])
+        return out[:cap]
+
+    if zygc is not None and len(zygc):
+        latest = zygc[zygc["报告日期"] == zygc["报告日期"].max()]
+        by = {k: pick_segs(latest, label, 10)
+              for k, label in (("product", "按产品分类"),
+                               ("industry", "按行业分类"),
+                               ("region", "按地区分类"))}
+        by = {k: v for k, v in by.items() if v}
+        if by:
+            rec["segmentsBy"] = by
+            rec["segments"] = by.get("product") or next(iter(by.values()))
 
     return {k: v for k, v in rec.items() if v not in (None, "")}
 

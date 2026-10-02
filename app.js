@@ -1657,22 +1657,41 @@ function drawMap() {
   fitMap();
 }
 
-// 公司介绍块：主营业务 + 主营构成表 + 经营范围（折叠）。数据来自
-// data/p/{代码}.json（同花顺主营业务 + 巨潮公司概况 + 东财主营构成），
+// 公司介绍块：主营业务 + 主营构成（按产品/按地区双表）+ 工商信息 + 经营范围（折叠）。
+// 数据来自 data/p/{代码}.json（同花顺主营业务 + 巨潮公司概况 + 东财主营构成），
 // 抓取脚本 pipeline/fetch_profiles.py。没有数据就不渲染这个块。
 function introHTML(pf) {
   if (!pf) return "";
   const facts = [];
   if (pf.listed) facts.push(`<span class="tag">${esc(t("intro.listed", "上市"))} ${esc(pf.listed)}</span>`);
   if (pf.csrcIndustry) facts.push(`<span class="tag">${esc(pf.csrcIndustry)}</span>`);
+  if (pf.legal) facts.push(`<span class="tag">${esc(t("intro.legal", "法人代表"))} ${esc(pf.legal)}</span>`);
+  if (pf.capital) facts.push(`<span class="tag">${esc(t("intro.capital", "注册资本"))} ${esc(pf.capital)}</span>`);
   if (pf.website) {
     const url = /^https?:/.test(pf.website) ? pf.website : `https://${pf.website}`;
     facts.push(`<a class="tag" href="${esc(url)}" target="_blank" rel="noopener">${esc(t("intro.website", "官网"))} ↗</a>`);
   }
-  const segs = (pf.segments || []).slice(0, 5);
-  const segRows = segs.map((s) => `<tr><td>${esc(s.item)}</td>`
-    + `<td class="num">${esc(fmtPct(s.revenueRatio * 100, false))}</td>`
-    + `<td class="num">${esc(fmtPct(s.grossMargin * 100, false))}</td></tr>`).join("");
+  // 主营构成：优先用三分法数据，按产品 + 按地区并排（地区分布对很多公司信息量大得多，
+  // 例：工业富联的境外收入占比）；老数据只有 segments 时退化为单表
+  const segTable = (title, segs) => {
+    if (!segs || !segs.length) return "";
+    const rows = segs.slice(0, 5).map((s) => `<tr><td>${esc(s.item)}</td>`
+      + `<td class="num">${esc(fmtPct(s.revenueRatio * 100, false))}</td>`
+      + `<td class="num">${esc(fmtPct(s.grossMargin * 100, false))}</td></tr>`).join("");
+    return `<div class="intro-seg-col">
+      <div class="intro-seg-title">${esc(title)}<span class="cf-meta">${esc(segs[0].period || "")}</span></div>
+      <table class="intro-segs">
+        <tr><th>${esc(t("intro.segItem", "主营构成"))}</th>
+            <th class="num">${esc(t("intro.revenueRatio", "收入占比"))}</th>
+            <th class="num">${esc(t("intro.grossMargin", "毛利率"))}</th></tr>
+        ${rows}
+      </table></div>`;
+  };
+  const by = pf.segmentsBy || null;
+  const prodTbl = segTable(t("intro.byProduct", "按产品"), by ? by.product : (pf.segments || []));
+  const regionTbl = by ? segTable(t("intro.byRegion", "按地区"), by.region) : "";
+  const segBlock = prodTbl || regionTbl
+    ? `<div class="intro-seg-grid">${prodTbl}${regionTbl}</div>` : "";
   return `
     <section class="sec intro-sec">
       <div class="sec-head">
@@ -1683,14 +1702,7 @@ function introHTML(pf) {
       ${facts.length ? `<div class="tags">${facts.join("")}</div>` : ""}
       ${pf.business ? `<p class="intro-biz">${esc(pf.business)}</p>` : ""}
       ${pf.products ? `<p class="note">${esc(t("intro.products", "主要产品"))}：${esc(pf.products)}</p>` : ""}
-      ${segs.length ? `
-      <table class="intro-segs">
-        <tr><th>${esc(t("intro.segItem", "主营构成"))}</th>
-            <th class="num">${esc(t("intro.revenueRatio", "收入占比"))}</th>
-            <th class="num">${esc(t("intro.grossMargin", "毛利率"))}</th></tr>
-        ${segRows}
-      </table>
-      <p class="note">${esc(t("intro.segPeriod", "报告期 {d}").replace("{d}", segs[0].period || ""))}</p>` : ""}
+      ${segBlock}
       ${pf.scope ? `<details class="intro-scope"><summary>${esc(t("intro.scope", "经营范围"))}</summary><p>${esc(pf.scope)}</p></details>` : ""}
     </section>`;
 }
