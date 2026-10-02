@@ -1118,11 +1118,16 @@ function chainTextOrPending(text) {
 
 function chainOutputHTML(ov) {
   // 产值/市场规模：status=ready 且有值才显示数字（带年份与来源）；其余一律占位
-  if (!ov || ov.status !== "ready" || ov.value == null) return chainPending();
+  if (!ovReady(ov)) return chainPending();
   const num = `${esc(String(ov.value))}${ov.unit ? " " + esc(ov.unit) : ""}`;
   const yr = ov.year ? ` <span class="cf-meta">${esc(String(ov.year))} 年</span>` : "";
   const src = ov.source ? ` <span class="cf-meta">来源：${esc(String(ov.source))}</span>` : "";
   return `<b class="cf-num">${num}</b>${yr}${src}`;
+}
+
+// 产值是否已就绪（渲染层据此决定"显示数字"还是"整个字段不渲染"）
+function ovReady(ov) {
+  return !!ov && ov.status === "ready" && ov.value != null;
 }
 
 function chainDemoTag(entry) {
@@ -1134,7 +1139,7 @@ function chainSectionHTML(title, entry, fields) {
     <section class="sec chain-sec">
       <div class="sec-head">
         <h2 class="sec-title">${esc(title)}${chainDemoTag(entry)}</h2>
-        <span class="sec-sub">${esc(t("chain.sub", "产业链档案 · 缺失的字段随数据接口接入逐步补齐"))}</span>
+        <span class="sec-sub">${esc(t("chain.sub", "产业链档案 · 仅展示已接入的数据"))}</span>
         <span class="sec-rule"></span>
       </div>
       <div class="chain-fields">${fields}</div>
@@ -1766,14 +1771,22 @@ function renderCompany(data) {
 
     ${chainDataCache && chainDataCache.companies && chainDataCache.companies[data.anchor.ticker] ? (() => {
       const prof = chainDataCache.companies[data.anchor.ticker];
-      const fields = chainField(t("chain.fIntro", "公司简介"), chainTextOrPending(prof.intro))
-        + chainField(t("chain.fPosition", "产业链位置"), chainTextOrPending(prof.chain_position))
-        + chainField(t("chain.fEquipment", "代表性设备设施"),
-            (prof.representative_devices || []).length ? `<div class="device-chips">${chainDeviceChips(prof.representative_devices)}</div>`
-            : (prof.representative_equipment || []).length ? `<div class="cf-text">${esc((prof.representative_equipment || []).join("、"))}</div>`
-            : chainPending())
-        + chainField(t("chain.fOutput", "营收 / 产值"), chainOutputHTML(prof.output_value));
-      return chainSectionHTML(t("chain.companyTitle", "公司档案"), prof, fields);
+      // 有真实内容的字段才渲染：公司简介已由上方「公司介绍」承载（4,071 家全量），
+      // 这里只留手工档案里独有的字段；设备/产值有了才显示——一屏「待接入」
+      // 占位符比整块不渲染更显 unfinished
+      const fields = [
+        prof.intro ? chainField(t("chain.fIntro", "公司简介"), esc(prof.intro)) : "",
+        prof.chain_position ? chainField(t("chain.fPosition", "产业链位置"), esc(prof.chain_position)) : "",
+        (prof.representative_devices || []).length
+          ? chainField(t("chain.fEquipment", "代表性设备设施"),
+              `<div class="device-chips">${chainDeviceChips(prof.representative_devices)}</div>`) : "",
+        !(prof.representative_devices || []).length && (prof.representative_equipment || []).length
+          ? chainField(t("chain.fEquipment", "代表性设备设施"),
+              `<div class="cf-text">${esc((prof.representative_equipment || []).join("、"))}</div>`) : "",
+        ovReady(prof.output_value)
+          ? chainField(t("chain.fOutput", "营收 / 产值"), chainOutputHTML(prof.output_value)) : "",
+      ].filter(Boolean).join("");
+      return fields ? chainSectionHTML(t("chain.companyTitle", "公司档案"), prof, fields) : "";
     })() : ""}
 
     ${peers.length ? `

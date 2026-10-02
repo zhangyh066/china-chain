@@ -213,7 +213,7 @@
   "market.noteFold": "{n} sectors shorter than 6px of arc are merged into the “other {n} sectors” slice (hover it to see their names). All 24 sectors are listed in full on the Atlas page and on each sector page.",
   "market.noteAll": "One slice per sector, sized by its share of the market. Click a slice to open it; hover to see its company count, share, change and market cap in the centre.",
   "home.slogan": "See the chain, not just the nodes.",
-  "chain.sub": "Chain profile · missing fields are filled in as data interfaces come online",
+  "chain.sub": "Chain profile · only fields with data are shown",
   "chain.pending": "Awaiting data interface",
   "chain.demoTag": "Sample data",
   "chain.industryTitle": "Industry profile",
