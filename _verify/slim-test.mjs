@@ -104,7 +104,7 @@ const home = JSON.parse(await evaluate(`JSON.stringify({
     drawn: cv.toDataURL().length
   } : null })(),
   footer: document.getElementById('footer-note')?.textContent || '',
-  disclaimer: document.body.textContent.includes('上下游连线为模型推断')
+  disclaimer: document.body.textContent.includes('行业级公开关系示意')
 })`));
 check('四个总览数字', home.heroStats === 4, `实际 ${home.heroStats}`);
 check('首页行业大环覆盖 24 个行业（20 个有名 + 小行业折叠）', home.ring && home.ring.named + home.ring.folded === 24,

@@ -30,7 +30,6 @@ def load(path, default=None):
 
 idx = load(os.path.join(DATA, "index.json")) or {}
 graph = load(os.path.join(DATA, "graph.json")) or {}
-chains = load(os.path.join(DATA, "chains.json")) or {}
 comp = idx.get("companies", [])
 
 check("index.json 公司数 ≥ 4000", len(comp) >= 4000, str(len(comp)))
@@ -56,12 +55,12 @@ for fn in ffiles:
 check("f/ 文件全部可解析为 JSON 对象", bad_json == 0, f"损坏 {bad_json}")
 check("无模拟行情（入库数据应为真实抓取）", simulated == 0, f"模拟 {simulated}")
 
-links = chains.get("links", {})
-edges = sum(len(v.get("u", [])) + len(v.get("d", [])) for v in links.values())
-check("chains 边数 > 20000", edges > 20000, str(edges))
-conflicts = [t for t, v in links.items()
-             if {x[1] for x in v.get("u", [])} & {x[1] for x in v.get("d", [])}]
-check("方向冲突 0 例", not conflicts, str(len(conflicts)))
+# chains.json 的推断连线已从界面撤下（仅存档）；UI 依赖的是行业级 chain_steps.json
+steps = (load(os.path.join(DATA, "chain_steps.json")) or {}).get("steps", [])
+check("chain_steps 步进表条数 40~80", 40 <= len(steps) <= 80, str(len(steps)))
+inds = set(idx.get("industryList", []))
+bad = [(u, d) for u, d, _ in steps if u not in inds or d not in inds]
+check("chain_steps 两端都是 24 个申万行业内", not bad, str(bad[:5]))
 
 n_company_pages = len([f for f in os.listdir(os.path.join(PAGES, "c")) if f.endswith(".html")]) \
     if os.path.isdir(os.path.join(PAGES, "c")) else 0
