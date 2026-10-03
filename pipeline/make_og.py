@@ -20,9 +20,9 @@ ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, "data")
 OUT = os.path.join(ROOT, "assets", "og")
 
-PART_CYCLE = ["#5B8448", "#996600", "#3F3A33"]
-PART_OTHER = "#BFB6A4"
-PAPER, INK, FAINT, GOLD, NAVY = "#F5F3EE", "#14181D", "#8A8A84", "#A8863F", "#13375E"
+PART_CYCLE = ["#1C3A5E", "#7A8CA3", "#3A3F45"]
+PART_OTHER = "#CBC6BC"
+PAPER, INK, FAINT, GOLD, NAVY = "#F5F3EE", "#14181D", "#8A8A84", "#13375E", "#13375E"
 
 W, H = 1200, 630
 

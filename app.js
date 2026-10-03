@@ -91,7 +91,7 @@ const SETTINGS_DEFAULTS = {
   layout: "group",      // group | flat
   width: "narrow",      // narrow | wide
   animations: true,
-  accent: "forest",     // forest（默认，配米白纸底）| navy | graphite
+  accent: "navy",       // navy（默认）| forest | graphite
 };
 let settings = { ...SETTINGS_DEFAULTS };
 
@@ -770,7 +770,7 @@ function drawMarketRing(cv, hover = -1, dragTo = -1) {
   const INK2 = cssVar("--text", "#14181D");
   const RISEC = cssVar("--rise", "#AE2A1E");
   const FALLC = cssVar("--fall", "#0E6B4A");
-  const GOLD = cssVar("--gold", "#A8863F");
+  const GOLD = cssVar("--gold", "#13375E");
   const MUTED = cssVar("--border-strong", "#C9C3B5");
 
   // 环
@@ -1961,20 +1961,12 @@ function industryParts(ind, g) {
   return { ind, total: members.length, ranked, byTicker };
 }
 
-/* 环节切片的色阶：藏青由深到浅。
-   不用彩虹色 —— 涨跌已经占了红绿、上下游占了藏青/古铜，再上彩虹就会"一个颜色两件事"。
-   这里只用一条明度阶 + 灰色兜底，色义不与其他层冲突（见 styles.css 开头的取色逻辑）。 */
-// 数据色照 FT（金融时报）的路子：**少色相、多档位**。
-// Datawrapper 拆过各家的配色规范，给这类做法起了个名字叫 "fewer hues, more shades" ——
-// 数据色的"安静版"（2026-09-28 审美走查后调整）：大面积扇形会把颜色放大，
-// FT 原版绿 #09823A（色度 56）摊在米白底的大扇形上太响，压暗降饱和到 #5B8448
-// （色度 38，绿相不变）；金与炭不动。所有距离都是算出来的：
-//   相邻 ΔE    绿→金 48.0   金→炭 56.0   炭→绿 43.8      （≥20 就算"一眼能分"）
-//   离「跌」绿 #0E6B4A  21.4 / 64.8 / 38.4               （全部 ≥20，不会看着像"跌"）
-//   离纸底的对比度      3.9:1 / 4.5:1 / 10.2:1
-// 不含蓝、不含红：红绿两个色位留给涨跌，蓝在米白纸底上本来就发脏。
-const PART_CYCLE = ["#5B8448", "#996600", "#3F3A33"];
-const PART_OTHER = "#BFB6A4";
+/* 环节切片：藏青明度阶 + 炭灰锚点，"fewer hues, more shades"；
+   红绿留给涨跌，故此处不含红绿。
+   三个色分别是深藏青、灰蓝、炭灰——同族明度阶 + 一个中性锚，
+   相邻扇区一眼可分，且都远离涨红/跌绿。 */
+const PART_CYCLE = ["#1C3A5E", "#7A8CA3", "#3A3F45"];
+const PART_OTHER = "#CBC6BC";
 const PART_TONES = PART_CYCLE;
 
 /* ---- 全景图谱：24 个小圆饼 ------------------------------------------------
@@ -2498,7 +2490,7 @@ function drawIndustryRing(cv, ind, g, sel = null, hoverSector = -1) {
   const FAINT = cssVar("--text-faint", "#8A8A84");
   const RISE = cssVar("--rise", "#AE2A1E");
   const FALL = cssVar("--fall", "#0E6B4A");
-  const GOLD = cssVar("--gold", "#A8863F");
+  const GOLD = cssVar("--gold", "#13375E");
   const LINE = cssVar("--border-strong", "#C9C3B5");
   const q = indexData?.quotes || {};
 

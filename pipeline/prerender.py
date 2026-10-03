@@ -71,8 +71,8 @@ def fmt_price(v):
 
 # ---------------------------------------------------------------- CSS（文字版页面共用）
 CSS = """
-  :root { --paper:#F5F3EE; --ink:#14181D; --faint:#8A8A84; --gold:#A8863F;
-          --gold-line:#E0D3B4; --navy:#13375E; --rise:#AE2A1E; --fall:#0E6B4A; }
+  :root { --paper:#F5F3EE; --ink:#14181D; --faint:#8A8A84; --gold:#13375E;
+          --gold-line:#D9D3C4; --navy:#13375E; --rise:#AE2A1E; --fall:#0E6B4A; }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--paper); color:var(--ink);
          font:16px/1.75 "Songti SC","Noto Serif CJK SC","SimSun",serif; }
