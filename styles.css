@@ -1,58 +1,75 @@
 /* ==========================================================================
-   中国供应链图谱 · 设计系统 v2（机构风：白场 · 藏青 · 细线）
+   中国供应链图谱 · 设计系统 v3（终端风：双主题）
 
-   参照顶级投行/咨询的版面：纯白场、深藏青、1px 细线、锐利边角、
-   衬线大标题 + 无衬线正文、数字一律等宽对齐。层次靠留白和细线，不靠彩色。
-   - 底：纯白（"画廊白"），浅灰只做极轻的填充层次
-   - 字：近黑的墨
-   - 强调：深藏青一族，全站唯一的机构色
-   - 三套独立语义，互不干扰：
-       ① 价格涨跌 → 涨红 / 跌绿（A股惯例，固定不随主题变）
-       ② 供应链方向 → 上游藏青蓝 / 下游古铜（固定，不随主题变）
+   参照交易终端（Bloomberg / 交易台）的版面：深底、琥珀高亮、等宽数字、
+   1px 细线、锐利边角。默认深色；[data-theme="light"] 切换为浅色研报版
+   （白场、藏青强调、衬线标题 —— 由 --font-d 一键换标题字体）。
+   - 两套主题共享同一套语义令牌，组件不写死颜色
+   - 四套独立语义，互不干扰：
+       ① 价格涨跌 → 涨红 / 跌绿（A股惯例；深色下提亮保证对比度）
+       ② 供应链方向 → 上游蓝 / 下游古铜（固定语义，深浅两版明度不同）
        ③ 行业分类 → 11 色，经色差校验（见 pipeline/palette_check.py）
+       ④ 数据图表 → --data-* 明度阶，不含红绿
    ========================================================================== */
 
 :root {
-  /* ---- 白场与墨 ---- */
-  --bg: #FFFFFF;          /* 画廊白 */
-  --surface: #FFFFFF;
-  --surface-soft: #F6F7F9;
-  --hover: #EEF1F5;
-  --text: #111418;
-  --text-soft: #49515A;
-  --text-faint: #8A919B;
-  --border: #E4E7EB;
-  --border-strong: #C7CDD5;
-  /* 层次感靠细线和留白，不靠投影 —— 投影只留一点点"贴纸"的实感 */
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --shadow-lift: 0 4px 16px rgba(16, 24, 40, 0.08);
+  /* ---- 深色终端（默认） ---- */
+  --bg: #0D1117;
+  --surface: #12161F;
+  --surface-soft: #171C26;
+  --hover: #1C2330;
+  --text: #D8DFE9;
+  --text-soft: #93A0B0;
+  --text-faint: #5E6B7C;
+  --border: #232C3B;
+  --border-strong: #38445A;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-lift: 0 4px 18px rgba(0, 0, 0, 0.5);
 
-  /* ---- 强调色（默认深藏青，可被 [data-accent] 覆盖） ---- */
-  --primary: #0A2540;
-  --primary-dark: #061829;
-  --primary-soft: #E7EDF4;
+  /* ---- 强调色：琥珀（终端标志色） ---- */
+  --primary: #E8A33D;
+  --primary-dark: #F2B75E;
+  --primary-soft: #2A2416;
+  --on-primary: #171206;   /* 琥珀底上的字 */
 
-  /* ---- 历史别名：金色通道已废弃，映射到藏青/中性灰，仅为兼容旧引用保留 ---- */
-  --gold: #0A2540;
-  --gold-dark: #061829;
-  --gold-soft: #F1F4F8;
-  --gold-line: #E2E6EC;
+  /* ---- 历史别名：金色通道已废弃，映射到强调色/中性灰，仅为兼容旧引用保留 ---- */
+  --gold: #E8A33D;
+  --gold-dark: #F2B75E;
+  --gold-soft: #2A2416;
+  --gold-line: #38445A;
 
-  /* ---- 供应链方向（固定，与强调色无关） ---- */
-  --up1: #1D4E7C;      /* 上游一级：藏青蓝 */
-  --up2: #3E6E9C;      /* 上游二级 */
-  --dn1: #9C5A2C;      /* 下游一级：古铜 */
-  --dn2: #7C4520;      /* 下游二级 */
+  /* ---- 供应链方向（固定语义；深色版提亮） ---- */
+  --up1: #5B9BD5;      /* 上游一级 */
+  --up2: #7FA9D4;      /* 上游二级 */
+  --dn1: #C08A4E;      /* 下游一级：古铜 */
+  --dn2: #A87A44;      /* 下游二级 */
   --anchor: var(--primary);
-  --terminal: #9AA1AB; /* 终端市场占位节点 */
+  --terminal: #5E6B7C; /* 终端市场占位节点 */
 
-  /* ---- 价格涨跌（A股惯例：涨红跌绿，固定） ---- */
-  --rise: #AE2A1E;     /* 印刷红，不用荧光正红 */
-  --fall: #0E6B4A;     /* 印刷绿 */
-  --flat: #8A919B;
+  /* ---- 价格涨跌（A股惯例：涨红跌绿；深色下提亮） ---- */
+  --rise: #F6465D;
+  --fall: #2FB67C;
+  --flat: #5E6B7C;
+  --rise-soft: #3A1F27;    /* hover 底（删除自选等破坏性操作） */
+  --rise-line: #5C2E37;
+
+  /* ---- 数据图表色阶（明度阶，不含红绿） ---- */
+  --data-1: #5C7DA3;
+  --data-2: #A8BCD0;
+  --data-3: #33455E;
+  --data-other: #232C3A;
+
+  /* ---- 价值链地图衬底（分组底色 / 列色带） ---- */
+  --tint-up1: #16222E; --tint-up2: #131C26;
+  --tint-dn1: #261E14; --tint-dn2: #1D1811;
+  --band-up1: #1B2836; --band-up2: #16202B;
+  --band-dn1: #2B2115; --band-dn2: #211A12;
+
+  /* ---- 空状态猫头鹰像素画 ---- */
+  --owl-1: #232C3A; --owl-2: #38445A; --owl-3: #5E6B7C; --owl-e: #D8DFE9;
 
   /* ---- 度量 ---- */
-  /* 锐利边角：咨询版面是方的，圆角是"网页应用"的味道 */
+  /* 锐利边角：终端版面是方的 */
   --radius: 3px;
   --radius-sm: 2px;
   --maxw: 1120px;
@@ -64,6 +81,8 @@
   --serif: "Songti SC", "Source Han Serif SC", "Noto Serif SC", "STSong",
            Georgia, "Times New Roman", serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Cascadia Mono", monospace;
+  /* 深色终端用无衬线标题；浅色研报用衬线标题 */
+  --font-d: var(--font);
 
   /* ---- 旧别名（兼容全表引用） ---- */
   --accent: var(--primary);
@@ -71,19 +90,65 @@
   --bg-soft: var(--surface-soft);
 }
 
-/* 强调色切换（设置 → 主色）。默认是深藏青（见 :root），下面几套按需覆盖。
+/* ---- 浅色主题（设置 → 主题 → 浅色）：白场研报版 ---- */
+:root[data-theme="light"] {
+  --bg: #FFFFFF;
+  --surface: #FFFFFF;
+  --surface-soft: #F6F7F9;
+  --hover: #EEF1F5;
+  --text: #111418;
+  --text-soft: #49515A;
+  --text-faint: #8A919B;
+  --border: #E4E7EB;
+  --border-strong: #C7CDD5;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-lift: 0 4px 16px rgba(16, 24, 40, 0.08);
+
+  --primary: #0A2540;
+  --primary-dark: #061829;
+  --primary-soft: #E7EDF4;
+  --on-primary: #FFFFFF;
+
+  --gold: #0A2540;
+  --gold-dark: #061829;
+  --gold-soft: #F1F4F8;
+  --gold-line: #E2E6EC;
+
+  --up1: #1D4E7C; --up2: #3E6E9C;
+  --dn1: #9C5A2C; --dn2: #7C4520;
+  --terminal: #9AA1AB;
+
+  --rise: #AE2A1E;
+  --fall: #0E6B4A;
+  --flat: #8A919B;
+  --rise-soft: #FCEFED;
+  --rise-line: #EFCFC9;
+
+  --data-1: #0F3460; --data-2: #6E86A3; --data-3: #363D46; --data-other: #C9CFD7;
+
+  --tint-up1: #E6EDF5; --tint-up2: #F1F5FA;
+  --tint-dn1: #F4E9DC; --tint-dn2: #F9F2E9;
+  --band-up1: #DDE7F1; --band-up2: #EDF3F9;
+  --band-dn1: #EFE0CE; --band-dn2: #F7EFE4;
+
+  --owl-1: #E8EBEF; --owl-2: #CDD4DB; --owl-3: #AEB7C1; --owl-e: #454C55;
+
+  --font-d: var(--serif);
+}
+
+/* 强调色切换（设置 → 主色）只对浅色主题生效——深色终端的琥珀是固定标志色。
    全部刻意避开红/绿——那两个色位已经归涨跌所有，不能抢。 */
-:root[data-accent="navy"] {
+:root[data-theme="light"][data-accent="navy"] {
   --primary: #0A2540;
   --primary-dark: #061829;
   --primary-soft: #E7EDF4;
 }
-:root[data-accent="forest"] {
+:root[data-theme="light"][data-accent="forest"] {
   --primary: #1E4A3C;
   --primary-dark: #143528;
   --primary-soft: #E0EAE5;
 }
-:root[data-accent="graphite"] {
+:root[data-theme="light"][data-accent="graphite"] {
   --primary: #2A2E35;
   --primary-dark: #171A1F;
   --primary-soft: #E6E7E9;
@@ -110,7 +175,7 @@ body {
   overscroll-behavior: none;
 }
 
-h1, h2, h3 { font-family: var(--serif); letter-spacing: -0.01em; font-weight: 600; }
+h1, h2, h3 { font-family: var(--font-d); letter-spacing: -0.01em; font-weight: 600; }
 
 a { color: var(--primary); text-decoration: none; transition: color 0.15s ease; }
 a:hover { color: var(--primary-dark); }
@@ -172,6 +237,11 @@ button { font-family: inherit; font-size: inherit; }
   border-top: 2px solid var(--gold);
 }
 .header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* 终端状态灯：开盘绿点 */
+.header-left::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--fall); flex: none;
+}
 .icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 34px; height: 34px; padding: 0; flex: none;
@@ -251,7 +321,7 @@ button { font-family: inherit; font-size: inherit; }
   }
   .search-fab {
     width: 46px; height: 46px; border-radius: 50%; border: none;
-    background: var(--primary); color: #fff; cursor: pointer;
+    background: var(--primary); color: var(--on-primary); cursor: pointer;
     box-shadow: var(--shadow-lift);
     display: flex; align-items: center; justify-content: center;
   }
@@ -327,7 +397,7 @@ button { font-family: inherit; font-size: inherit; }
 }
 
 .hero-slogan {
-  font-family: var(--serif); font-size: 21px; font-weight: 500;
+  font-family: var(--font-d); font-size: 21px; font-weight: 500;
   color: var(--text); margin: -2px 0 0; letter-spacing: 0.01em;
 }
 .hero-sub {
@@ -340,7 +410,7 @@ button { font-family: inherit; font-size: inherit; }
 }
 .hero-stat { display: flex; flex-direction: column; gap: 2px; }
 .hero-stat b {
-  font-family: var(--serif); font-size: 30px; font-weight: 600; color: var(--text);
+  font-family: var(--font-d); font-size: 30px; font-weight: 600; color: var(--text);
   letter-spacing: -0.01em;
 }
 .hero-stat span { font-size: 12px; color: var(--text-faint); }
@@ -360,7 +430,7 @@ button { font-family: inherit; font-size: inherit; }
   background: color-mix(in srgb, var(--bg) 92%, transparent);
   backdrop-filter: blur(8px);
 }
-.hero-bar-title { font-family: var(--serif); font-size: 17px; font-weight: 600; }
+.hero-bar-title { font-family: var(--font-d); font-size: 17px; font-weight: 600; }
 .hero-bar-sub { font-size: 12.5px; color: var(--text-faint); }
 .hero-bar-up {
   margin-left: auto; padding: 5px 12px; font-size: 12.5px; cursor: pointer;
@@ -398,7 +468,7 @@ button { font-family: inherit; font-size: inherit; }
   box-shadow: var(--shadow-lift); border-color: var(--border-strong);
 }
 .card-head { display: flex; align-items: baseline; gap: 8px; padding-right: 30px; }
-.card-name { font-family: var(--serif); font-size: 17px; font-weight: 600; color: var(--text); }
+.card-name { font-family: var(--font-d); font-size: 17px; font-weight: 600; color: var(--text); }
 .card-ticker { font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
 .card-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag {
@@ -456,7 +526,7 @@ button { font-family: inherit; font-size: inherit; }
 }
 .chip:hover { border-color: var(--border-strong); color: var(--text); }
 .chip[aria-pressed="true"] {
-  background: var(--primary); color: #fff; border-color: var(--primary);
+  background: var(--primary); color: var(--on-primary); border-color: var(--primary);
 }
 .toolbar-sep { width: 1px; height: 20px; background: var(--border-strong); margin: 0 4px; }
 
@@ -554,14 +624,14 @@ button { font-family: inherit; font-size: inherit; }
   padding: 8px 10px; cursor: pointer; text-align: left;
   background: transparent; border: none; color: inherit;
 }
-.vcm-cluster-head:hover { background: rgba(0, 0, 0, 0.025); }
+.vcm-cluster-head:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
 .vcm-cluster-title {
   font-size: 12.5px; font-weight: 500; color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .badge {
   font-family: var(--mono); font-size: 10.5px; padding: 1px 6px;
-  border-radius: 999px; background: rgba(255, 255, 255, 0.75);
+  border-radius: 999px; background: var(--surface);
   color: var(--text-soft); border: 1px solid var(--border);
 }
 .vcm-chev { margin-left: auto; font-size: 10px; color: var(--text-faint); transition: transform 0.2s ease; }
@@ -597,11 +667,11 @@ button { font-family: inherit; font-size: inherit; }
 
 .map-anchor {
   border-left: 3px solid var(--anchor);
-  background: linear-gradient(0deg, color-mix(in srgb, var(--primary-soft) 60%, #fff), var(--surface));
+  background: linear-gradient(0deg, color-mix(in srgb, var(--primary-soft) 60%, var(--surface)), var(--surface));
   padding: 14px 12px;
   cursor: default;
 }
-.map-anchor .map-node-name { font-family: var(--serif); font-size: 16px; font-weight: 600; }
+.map-anchor .map-node-name { font-family: var(--font-d); font-size: 16px; font-weight: 600; }
 .vcm-anchor-cluster { border-color: var(--primary); border-left-color: var(--primary); }
 
 /* 依赖度进度条（供应商对锚点的收入占比） */
@@ -616,7 +686,7 @@ button { font-family: inherit; font-size: inherit; }
   transform: translateX(-50%);
   display: flex; flex-direction: column; gap: 1px;
   padding: 7px 10px; min-width: 140px; z-index: 20;
-  background: var(--text); color: #fff; border-radius: var(--radius-sm);
+  background: var(--text); color: var(--bg); border-radius: var(--radius-sm);
   opacity: 0; pointer-events: none; transition: opacity 0.15s ease;
 }
 .vcm-card:hover .vcm-tip { opacity: 1; }
@@ -657,7 +727,7 @@ button { font-family: inherit; font-size: inherit; }
   transform: translateY(-1px); text-decoration: none;
 }
 .pie-head { display: flex; align-items: baseline; gap: 8px; }
-.pie-title { margin: 0; font-family: var(--serif); font-size: 16px; font-weight: 600; }
+.pie-title { margin: 0; font-family: var(--font-d); font-size: 16px; font-weight: 600; }
 .pie-chg {
   margin-left: auto; font-family: var(--mono); font-size: 12.5px;
   font-variant-numeric: tabular-nums;
@@ -727,7 +797,7 @@ button { font-family: inherit; font-size: inherit; }
 /* 大环图的悬停读数：position fixed 是因为定位用的是鼠标的视口坐标 */
 .tile-tip {
   position: fixed; z-index: 60; pointer-events: none;
-  padding: 7px 10px; background: var(--text); color: #fff;
+  padding: 7px 10px; background: var(--text); color: var(--bg);
   border-radius: var(--radius-sm); font-size: 11.5px; line-height: 1.5;
   max-width: 240px;
 }
@@ -825,7 +895,7 @@ button { font-family: inherit; font-size: inherit; }
   background: transparent; color: var(--text-faint);
   border: 1px solid transparent; border-radius: 999px;
 }
-.tray-row-x:hover { background: #FCEFED; color: var(--rise); }
+.tray-row-x:hover { background: var(--rise-soft); color: var(--rise); }
 .tray-empty {
   display: flex; flex-direction: column; align-items: center; gap: 6px;
   padding: 24px 12px; text-align: center;
@@ -839,12 +909,12 @@ button { font-family: inherit; font-size: inherit; }
   background: transparent; color: var(--text-soft);
   border: 1px solid var(--border); border-radius: var(--radius-sm);
 }
-.tray-clear:hover { color: var(--rise); border-color: #EFCFC9; background: #FCEFED; }
+.tray-clear:hover { color: var(--rise); border-color: var(--rise-line); background: var(--rise-soft); }
 
 /* ---- 设置模态 ------------------------------------------------------------ */
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 50;
-  background: rgba(26, 26, 26, 0.32); backdrop-filter: blur(2px);
+  background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(2px);
   opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
 }
 .modal-backdrop.open { opacity: 1; pointer-events: auto; }
@@ -882,8 +952,8 @@ button { font-family: inherit; font-size: inherit; }
   border: 1px solid var(--border); border-radius: var(--radius);
 }
 .seg-btn:hover { border-color: var(--border-strong); color: var(--text); }
-.seg-btn[aria-pressed="true"] { background: var(--primary); color: #fff; border-color: var(--primary); }
-.swatch { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.seg-btn[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.swatch { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; border: 1px solid var(--border-strong); }
 .settings-note {
   margin-top: 18px; padding: 12px 14px; font-size: 12px; line-height: 1.75;
   color: var(--text-soft); background: var(--surface-soft);
@@ -908,7 +978,7 @@ button { font-family: inherit; font-size: inherit; }
   background: var(--surface-soft); color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
-.chip[aria-pressed="true"] .chip-n { background: rgba(255, 255, 255, 0.22); color: #fff; }
+.chip[aria-pressed="true"] .chip-n { background: rgba(128, 128, 128, 0.28); color: var(--on-primary); }
 
 /* 分组头的"查看全部 N 家 / 收起" */
 
@@ -941,7 +1011,7 @@ button { font-family: inherit; font-size: inherit; }
   padding: 9px 10px; border-bottom: 1px solid var(--border);
   text-decoration: none;
 }
-.peer-row:nth-child(odd) { background: rgba(20, 24, 29, 0.018); }
+.peer-row:nth-child(odd) { background: color-mix(in srgb, var(--text) 2.5%, transparent); }
 .peer-row:hover { background: var(--primary-soft); }
 .peer-idx {
   width: 20px; flex: none; font-family: var(--mono); font-size: 11px;
@@ -1068,5 +1138,5 @@ button { font-family: inherit; font-size: inherit; }
 /* ---- 打印 ---------------------------------------------------------------- */
 @media print {
   .site-header, .site-footer, .saved-tray, .search-fab-wrap, .load-rule, .tile-tip { display: none; }
-  body { background: #fff; }
+  body { background: #fff; color: #111418; }
 }

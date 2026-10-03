@@ -91,7 +91,8 @@ const SETTINGS_DEFAULTS = {
   layout: "group",      // group | flat
   width: "narrow",      // narrow | wide
   animations: true,
-  accent: "navy",       // navy（默认）| forest | graphite
+  theme: "dark",        // dark（默认，终端风）| light（浅色研报风）
+  accent: "navy",       // navy（默认）| forest | graphite —— 仅浅色主题生效
 };
 let settings = { ...SETTINGS_DEFAULTS };
 
@@ -109,6 +110,12 @@ function applyAccent() {
   const el = document.documentElement;
   if (settings.accent && settings.accent !== "navy") el.dataset.accent = settings.accent;
   else el.removeAttribute("data-accent");
+}
+// 主题只有浅色才需要打属性（:root 默认就是深色）；index.html 里有同款内联脚本防首屏闪烁。
+function applyTheme() {
+  const el = document.documentElement;
+  if (settings.theme === "light") el.dataset.theme = "light";
+  else el.removeAttribute("data-theme");
 }
 function applyMotion() {
   document.documentElement.classList.toggle("no-anim", !settings.animations);
@@ -196,14 +203,19 @@ const OWL_GRID = [
   ".....233332.....",
   "................",
 ];
-const OWL_PAL = { "1": "#E8EBEF", "2": "#CDD4DB", "3": "#AEB7C1", "e": "#454C55" };
+// 调色板从 CSS 变量取（--owl-*），深色/浅色主题各有一份——
+// 浅色下是浅灰猫头鹰，深色下要反过来：深灰身体、亮色眼睛。
 function owlSVG(px = 6) {
+  const pal = {
+    "1": cssVar("--owl-1", "#232C3A"), "2": cssVar("--owl-2", "#38445A"),
+    "3": cssVar("--owl-3", "#5E6B7C"), "e": cssVar("--owl-e", "#D8DFE9"),
+  };
   const cols = Math.max(...OWL_GRID.map((r) => r.length));
   const rows = OWL_GRID.length;
   let rects = "";
   OWL_GRID.forEach((row, y) => {
     for (let x = 0; x < row.length; x++) {
-      const c = OWL_PAL[row[x]];
+      const c = pal[row[x]];
       if (c) rects += `<rect x="${x}" y="${y}" width="1" height="1" fill="${c}"/>`;
     }
   });
@@ -766,13 +778,14 @@ function drawMarketRing(cv, hover = -1, dragTo = -1) {
   const rOut = R, rIn = R - band;
   cv._segs = segs;
   cv._R = R;
-  const INK = cssVar("--text", "#111418");
-  const FAINT = cssVar("--text-faint", "#8A919B");
-  const INK2 = cssVar("--text", "#111418");
-  const RISEC = cssVar("--rise", "#AE2A1E");
-  const FALLC = cssVar("--fall", "#0E6B4A");
-  const GOLD = cssVar("--gold", "#0A2540");
-  const MUTED = cssVar("--border-strong", "#C7CDD5");
+  const INK = cssVar("--text", "#D8DFE9");
+  const FAINT = cssVar("--text-faint", "#5E6B7C");
+  const INK2 = cssVar("--text", "#D8DFE9");
+  const RISEC = cssVar("--rise", "#F6465D");
+  const FALLC = cssVar("--fall", "#2FB67C");
+  const MUTED = cssVar("--border-strong", "#38445A");
+  const CYCLE = partCycle();
+  const OTHER = partOther();
 
   // 环
   segs.forEach((sg, i) => {
@@ -782,7 +795,7 @@ function drawMarketRing(cv, hover = -1, dragTo = -1) {
     ctx.arc(cx, cy, rIn, sg.a1, sg.a0, true);
     ctx.closePath();
     // 段色按序号取三色循环 —— 相邻必不同（金色已归数据色，所以高亮改成描边）
-    ctx.fillStyle = sg.ind ? PART_CYCLE[i % PART_CYCLE.length] : PART_OTHER;
+    ctx.fillStyle = sg.ind ? CYCLE[i % CYCLE.length] : OTHER;
     ctx.fill();
     if (on) {
       ctx.strokeStyle = INK2;
@@ -1380,16 +1393,16 @@ function linkColor(relation, tier) {
   if (relation === "upstream") return tier === 1 ? "var(--up1)" : "var(--up2)";
   return tier === 1 ? "var(--dn1)" : "var(--dn2)";
 }
-// 分组底色 / 列色带：都压到"纸"的明度上，只留一点冷暖方向，
-// 免得色块比内容还抢眼——报告的底纹从来是衬纸，不是主角。
-// 底色换成古铜纸之后，这几档要相应加深，否则和底色糊在一起看不见了。
+// 分组底色 / 列色带：都压到页面底色附近，只留一点冷暖方向，
+// 免得色块比内容还抢眼——衬底从来是衬纸，不是主角。
+// 颜色运行时从 CSS 变量取，深色/浅色两套主题各自有值。
 function tintFor(relation, tier) {
-  if (relation === "upstream") return tier === 1 ? "#E6EDF5" : "#F1F5FA";
-  return tier === 1 ? "#F4E9DC" : "#F9F2E9";
+  if (relation === "upstream") return cssVar(tier === 1 ? "--tint-up1" : "--tint-up2", "#16222E");
+  return cssVar(tier === 1 ? "--tint-dn1" : "--tint-dn2", "#261E14");
 }
 function bandColor(dir, tier) {
-  if (dir === "upstream") return tier === 1 ? "#DDE7F1" : "#EDF3F9";
-  return tier === 1 ? "#EFE0CE" : "#F7EFE4";
+  if (dir === "upstream") return cssVar(tier === 1 ? "--band-up1" : "--band-up2", "#1B2836");
+  return cssVar(tier === 1 ? "--band-dn1" : "--band-dn2", "#2B2115");
 }
 
 function buildClusters(nodes) {
@@ -1962,13 +1975,15 @@ function industryParts(ind, g) {
   return { ind, total: members.length, ranked, byTicker };
 }
 
-/* 环节切片：深藏青明度阶 + 炭灰锚点，"fewer hues, more shades"；
-   红绿留给涨跌，故此处不含红绿。
-   三个色分别是深藏青、灰蓝、炭灰——同族明度阶 + 一个中性锚，
-   相邻扇区一眼可分，且都远离涨红/跌绿。 */
-const PART_CYCLE = ["#0F3460", "#6E86A3", "#363D46"];
-const PART_OTHER = "#C9CFD7";
-const PART_TONES = PART_CYCLE;
+/* 环节切片：数据色明度阶（--data-*），"fewer hues, more shades"；
+   红绿留给涨跌，故此处不含红绿。颜色运行时从 CSS 变量取——
+   深色终端是亮蓝灰阶，浅色研报是藏青明度阶，切主题时自动跟随。 */
+function partCycle() {
+  return [cssVar("--data-1", "#5C7DA3"), cssVar("--data-2", "#A8BCD0"), cssVar("--data-3", "#33455E")];
+}
+function partOther() {
+  return cssVar("--data-other", "#232C3A");
+}
 
 /* ---- 全景图谱：24 个小圆饼 ------------------------------------------------
    这个页面的任务只有一个：让人一眼看清 24 个行业各自由什么环节组成、规模多大。
@@ -2007,15 +2022,16 @@ function renderTilesPage(g) {
     const avg = chgN ? chgSum / chgN : null;
     const top = parts.ranked.slice(0, TILE_PARTS);
     const restN = parts.ranked.slice(TILE_PARTS).reduce((s, r) => s + r.n, 0);
+    const cycle = partCycle();
     const rows = top.map((r, i) => `
           <li class="pie-row" data-i="${i}">
-            <i style="background:${PART_CYCLE[i % PART_CYCLE.length]}"></i>
+            <i style="background:${cycle[i % cycle.length]}"></i>
             <span class="pie-row-name">${esc(r.name)}</span>
             <span class="pie-row-n">${esc(fmtInt(r.n))}</span>
           </li>`).join("")
       + (restN ? `
           <li class="pie-row" data-i="${top.length}">
-            <i style="background:${PART_OTHER}"></i>
+            <i style="background:${partOther()}"></i>
             <span class="pie-row-name">${esc(t("wm.others", "其他 {n} 个环节").replace("{n}", fmtInt(parts.ranked.length - top.length)))}</span>
             <span class="pie-row-n">${esc(fmtInt(restN))}</span>
           </li>` : "");
@@ -2076,8 +2092,9 @@ function drawDonut(cv, ind, g, hover = -1) {
   const parts = cv._parts;
   const top = parts.ranked.slice(0, TILE_PARTS);
   const restN = parts.ranked.slice(TILE_PARTS).reduce((s, r) => s + r.n, 0);
-  const slices = top.map((r, i) => ({ ...r, color: PART_CYCLE[i % PART_CYCLE.length] }));
-  if (restN) slices.push({ name: t("wm.othersShort", "其他"), n: restN, color: PART_OTHER });
+  const cycle = partCycle();
+  const slices = top.map((r, i) => ({ ...r, color: cycle[i % cycle.length] }));
+  if (restN) slices.push({ name: t("wm.othersShort", "其他"), n: restN, color: partOther() });
 
   const dpr = window.devicePixelRatio || 1;
   const S = Math.max(104, Math.min(126, cv.parentElement?.clientWidth ? cv.parentElement.clientWidth * 0.42 : 112));
@@ -2110,8 +2127,8 @@ function drawDonut(cv, ind, g, hover = -1) {
   ctx.globalAlpha = 1;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  const ink = cssVar("--text", "#111418");
-  const faint = cssVar("--text-faint", "#8A919B");
+  const ink = cssVar("--text", "#D8DFE9");
+  const faint = cssVar("--text-faint", "#5E6B7C");
   if (hover >= 0 && slices[hover]) {
     const s = slices[hover];
     let name = s.name;
@@ -2487,12 +2504,12 @@ function drawIndustryRing(cv, ind, g, sel = null, hoverSector = -1) {
   cv._R = R;                          // 悬停命中判定要用同一个半径
 
   const font = getComputedStyle(document.body).fontFamily;
-  const INK = cssVar("--text", "#111418");
-  const FAINT = cssVar("--text-faint", "#8A919B");
-  const RISE = cssVar("--rise", "#AE2A1E");
-  const FALL = cssVar("--fall", "#0E6B4A");
-  const GOLD = cssVar("--gold", "#0A2540");
-  const LINE = cssVar("--border-strong", "#C7CDD5");
+  const INK = cssVar("--text", "#D8DFE9");
+  const FAINT = cssVar("--text-faint", "#5E6B7C");
+  const RISE = cssVar("--rise", "#F6465D");
+  const FALL = cssVar("--fall", "#2FB67C");
+  const GOLD = cssVar("--gold", "#E8A33D");
+  const LINE = cssVar("--border-strong", "#38445A");
   const q = indexData?.quotes || {};
 
   // ① 外圈弧段 = 环节。**每一段都画** —— 之前只画"有 3 家以上"的，
@@ -2631,7 +2648,7 @@ function drawIndustryRing(cv, ind, g, sel = null, hoverSector = -1) {
     }
   } else {
     const parts = data.parts;
-    ctx.font = `600 30px ${cssVar("--serif", "Georgia, serif")}`;
+    ctx.font = `600 30px ${cssVar("--font-d", "Georgia, serif")}`;
     ctx.fillStyle = INK;
     ctx.fillText(t("sector." + ind, ind), cx, y0 - 52);
     ctx.font = `400 13px ${font}`;
@@ -2931,6 +2948,10 @@ function segRow(label, key, opts) {
 }
 function settingsBodyHTML() {
   return `
+    ${segRow(t("settings.theme", "主题"), "theme", [
+      { v: "dark", label: t("settings.theme.dark", "深色"), dot: "#0D1117" },
+      { v: "light", label: t("settings.theme.light", "浅色"), dot: "#FFFFFF" },
+    ])}
     ${segRow(t("settings.view", "首页大环"), "layout", [
       { v: "group", label: t("settings.view.detail", "标出每个行业") },
       { v: "flat", label: t("settings.view.compact", "只标最大的 8 个") },
@@ -2972,6 +2993,7 @@ function onSettingsClick(e) {
   saveSettings();
   [...btn.parentElement.children].forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
 
+  if (key === "theme") { applyTheme(); route(); return; }   // 画布色是绘制时读 cssVar 的，必须重渲染当前路由
   if (key === "accent") { applyAccent(); return; }
   if (key === "animations") { applyMotion(); return; }   // 下次渲染生效
   if (parseRoute().name === "home") {
@@ -3090,7 +3112,8 @@ async function boot() {
   window.addEventListener("resize", syncHeaderHeight);
 
   loadSettings();
-  applyAccent();      // index.html 已经在首帧前设过一遍（双保险）
+  applyTheme();       // index.html 已经在首帧前设过一遍（双保险）
+  applyAccent();
   applyMotion();
   loadSaved();
   mapZoom = settings.zoom || mapZoom;

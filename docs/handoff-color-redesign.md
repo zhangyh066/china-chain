@@ -1,74 +1,62 @@
-# 设计系统 v2：白场 · 藏青 · 细线（机构风改版）
+# 链谱 ChainAtlas · 前端设计契约 v3（终端风 · 双主题）
 
-> 本文档记录 2026-10-03 完成的前端整体重设计，替代旧的配色交接方案。
-> 目标：从"暖纸博客感"升级为顶级投行/咨询（McKinsey / Goldman / FT 白版）的机构版面。
-> 本文档同时作为后续维护的**设计契约**：新组件必须遵守这里的规则。
+> 本文档是当前前端设计的**唯一权威说明**。改样式前必读；改完后必须同步本文档。
+> 历史版本：v1 橄榄绿（已废弃）→ v2 白场藏青（保留为浅色主题）→ **v3 深色终端默认 + 浅色研报可选**。
 
-## 1. 设计方向
+## 设计参照与定位
 
-**「白场藏青」**：纯白底 + 深藏青唯一强调色 + 1px 冷灰细线 + 锐利边角。
+- **默认主题 = 深色终端**：参照 Bloomberg Terminal / 交易台界面——深底、琥珀高亮、等宽数字、1px 细线、锐利边角（3px 半径）。终端界面的权威感来自"信息密度 + 克制用色"，不是装饰。
+- **浅色主题 = 白场研报**：即 v2 的券商研报风——纯白场、深藏青强调、衬线标题。设置 → 主题 → 浅色 切换，localStorage 持久化（`cnchain.settings.theme`）。
+- 切换即时生效、刷新不闪：`<html data-theme="light">` 由 index.html 内联脚本在首帧前打出（深色是 `:root` 默认，不打属性）。
 
-与旧版的本质区别不是换了几个颜色，而是换了整套气质来源：
+## 核心规则（不可违反）
 
-| 维度 | 旧版（纸与墨） | v2（白场藏青） |
+1. **组件不写死颜色**。一切颜色走 CSS 变量；canvas/SVG 内联生成处用 `cssVar()` 运行时读取（`app.js` 里 `partCycle()`、`tintFor()`、`bandColor()`、`owlSVG()` 是范例）。新增颜色必须先加令牌再用。
+2. **四套色彩语义互不重叠**：
+   - 价格涨跌 → 涨红 `--rise` / 跌绿 `--fall`（A股惯例；深色下提亮到 #F6465D/#2FB67C）
+   - 供应链方向 → 上游蓝 `--up1/up2` / 下游古铜 `--dn1/dn2`（固定语义，深浅两版只调明度）
+   - 强调色 → 深色固定琥珀 `#E8A33D`（终端标志色，不可换）；浅色藏青 `#0A2540`（设置里可换松绿/石墨，选择器是 `:root[data-theme="light"][data-accent=...]`）
+   - 数据图表 → `--data-1/2/3/other` 明度阶，**不含红绿**，避免与涨跌混淆
+3. **标题字体随主题走 `--font-d`**：深色=无衬线（终端感），浅色=衬线（研报感）。画布里的标题（行业大环中心字）也读这个变量，不写死 serif。
+4. 强调色不承担数据含义；红色系只允许出现在"涨跌"和"破坏性操作 hover"（`--rise-soft/--rise-line`）。
+5. 数字一律 `font-variant-numeric: tabular-nums` + `var(--mono)`，这是金融版面专业感的底线。
+
+## 主题令牌速查
+
+| 令牌族 | 深色（默认） | 浅色（data-theme="light"） |
 |---|---|---|
-| 底色 | 米白纸 `#F5F3EE`（暖） | 纯白 `#FFFFFF`（画廊白） |
-| 中性色 | 暖灰（米色调） | 冷灰（蓝灰调） |
-| 强调色 | 松绿 `#1E4A3C` + 金色 `#A8863F` 双彩色 | 深藏青 `#0A2540` 单彩色 |
-| 边角 | 圆角 6px + 胶囊芯片 | 直角 2–3px 矩形芯片 |
-| 导航 | 衬线 16px | 无衬线 14px |
-| 首页标题区 | 金色短横装饰 | kicker 眉线标签（等宽字体、大写字距） |
-| 免责声明框 | 黄底金框 | 浅灰底 + 藏青左边条 |
+| `--bg / --surface` | `#0D1117 / #12161F` | `#FFFFFF` |
+| `--text / --text-soft / --text-faint` | `#D8DFE9 / #93A0B0 / #5E6B7C` | `#111418 / #49515A / #8A919B` |
+| `--border / --border-strong` | `#232C3B / #38445A` | `#E4E7EB / #C7CDD5` |
+| `--primary`（强调） | `#E8A33D` 琥珀 | `#0A2540` 藏青 |
+| `--on-primary` | `#171206` | `#FFFFFF` |
+| `--rise / --fall` | `#F6465D / #2FB67C` | `#AE2A1E / #0E6B4A` |
+| `--up1/up2 / --dn1/dn2` | `#5B9BD5/#7FA9D4 / #C08A4E/#A87A44` | `#1D4E7C/#3E6E9C / #9C5A2C/#7C4520` |
+| `--data-*` | `#5C7DA3/#A8BCD0/#33455E/#232C3A` | `#0F3460/#6E86A3/#363D46/#C9CFD7` |
+| 价值链衬底 `--tint-*` / `--band-*` | 深青灰/深棕两组 | 淡蓝/淡米色两组 |
+| 空状态猫头鹰 `--owl-*` | 深灰身亮眼 | 浅灰身深眼 |
 
-## 2. 不变的语义色（设计契约，勿动）
+`--gold*` 是历史别名，映射到强调色（深色=琥珀，浅色=藏青），仅为兼容旧选择器保留，**新代码不要再用 gold 命名**。
 
-- **涨红 `#AE2A1E` / 跌绿 `#0E6B4A`**：A 股惯例，全站只有它们能表达涨跌。
-- **上游藏青蓝 `#1D4E7C/#3E6E9C`、下游古铜 `#9C5A2C/#7C4520`**：价值链地图的方向语义。
-- 行业 11 色（`pipeline/palette_check.py` 校验）。
-- 原则：**一个颜色只表达一件事**。任何新彩色都必须先回答"它和红/绿/蓝/古铜谁冲突"。
+## 已踩过的坑（改代码前看）
 
-## 3. 核心令牌（styles.css `:root`）
+- **canvas 不读主题自动变**：所有画布颜色是绘制时 `cssVar()` 取的快照，切主题必须重渲染——`onSettingsClick` 里 theme 分支调 `route()` 干这件事，别绕开。
+- **index.html 内联首帧脚本**与 `applyTheme()/applyAccent()` 用同一个 storage key，两处逻辑必须保持一致（accent 默认 "navy"，之前写成 "forest" 导致默认色闪烁）。
+- 主题切换后 hero 打字机会重放、价值链地图连接线（SVG 用 `var(--up1)` 等）自动跟随——这两者是预期行为，不是 bug。
+- `.badge`、`.peer-row` 斑马纹、`.vcm-cluster-head:hover` 这类"衬底上的小变化"不能用 `rgba(255,255,255,x)` 或 `rgba(0,0,0,x)` 写死——深浅总有一边看不见；用 `color-mix(in srgb, var(--text) N%, transparent)`。
+- 设置面板的色板 `.swatch` 必须带 `border`（浅色主题的白色圆点、深色主题的近黑圆点否则看不见）。
 
-```
---bg        #FFFFFF    画廊白
---surface   #FFFFFF
---surface-soft #F6F7F9  极轻填充
---hover     #EEF1F5
---text      #111418    近黑
---text-soft #49515A
---text-faint #8A919B
---border    #E4E7EB    细线
---border-strong #C7CDD5
---primary   #0A2540    深藏青（Stripe 式机构蓝黑）
---primary-dark  #061829
---primary-soft  #E7EDF4
---radius    3px / --radius-sm 2px
-```
+## 文件地图
 
-`--gold*` 四个变量是**历史别名**，值已映射到藏青/中性灰，仅为兼容旧选择器引用保留；新代码一律用 `--primary*` 或中性色。
+- `styles.css` — 全部设计令牌 + 组件样式；主题块在文件顶部（`:root` 深色 / `:root[data-theme="light"]` 浅色 / accent 三组仅浅色）
+- `app.js` — `applyTheme()`、`partCycle()/partOther()`、`tintFor()/bandColor()`、`owlSVG()`、`onSettingsClick` 的 theme 分支
+- `index.html` — 首帧内联脚本（防闪烁）、`<meta name="theme-color">`、内联 favicon（深色底琥珀圈）
+- `locales/zh.json` / `en.json` — `settings.theme*` 三个键
+- `_design_preview/` — 三个风格样稿（A 白场研报 / B 深色终端=现行 / C 杂志编辑），仅本地参考，不入库
 
-主题切换（设置 → 主色）：`navy`（默认）/ `forest` / `graphite` 三套仍可选，默认 navy。
+## 验证清单（改样式后必跑）
 
-## 4. 本次改动的文件清单
-
-- `styles.css` — `:root` 令牌全换；hero 区重构（kicker + 大标题 + 统计行细线）；导航改无衬线；芯片/标签/按钮全部直角化；区块标题线改冷灰；免责声明框中性化
-- `app.js` — hero 新增 `.hero-kicker` 标记；圆饼数据色 `PART_CYCLE = ["#0F3460","#6E86A3","#363D46"]`、`PART_OTHER = "#C9CFD7"`；`OWL_PAL` 调冷；全部 cssVar 回退值同步；设置面板藏青色板值更新
-- `locales/zh.json` / `locales/en.json` — 新增 `home.kicker`；`settings.note` 配色约定文案更新
-- `pages/style.css` — 静态 SEO 页令牌同步（白底/藏青/冷灰线）
-- `manifest.webmanifest` / `index.html` — `theme_color`/`background_color` 更新
-
-## 5. 构建与验证
-
-```bash
-python build_dist.py    # 同步 dist/
-python serve.py 8123    # 本地预览（no-store）
-```
-
-验证路由：`#/`、`#/worldmap`、`#/i/电子`、`#/c/000063`、`#/m/电子`、`#/vision` + 设置面板主题切换。
-
-## 6. 后续维护规则
-
-1. 新组件先从中性色（`--surface-soft`/`--border`/`--text-soft`）里选，不够再考虑 `--primary`，永远不要轻易引入新彩色。
-2. 阴影只允许 `--shadow` / `--shadow-lift` 两档；层次优先用细线和留白。
-3. 直角是默认；圆形只留给头像级元素（星标按钮、计数气泡）。
-4. 数字一律 `font-variant-numeric: tabular-nums`（已有集中规则，新数字组件把选择器加进去）。
+1. `python build_dist.py` 构建通过
+2. 本地 `python serve.py 8123`，双主题各走一遍：`#/`（hero + 大环）、`#/worldmap`（小圆饼）、`#/i/电子`、`#/m/电子`（大环图）、`#/c/000063`（价值链地图衬底）、`#/vision`
+3. 设置面板切换主题后画布颜色跟随（不跟随 = 哪里写死了颜色）
+4. 刷新后主题保持（不保持 = 首帧脚本和 applyTheme 不一致）
