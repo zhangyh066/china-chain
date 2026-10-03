@@ -67,6 +67,15 @@
 ### 排版细节
 `::selection` 用强调色；`body { text-autospace: normal }` 中西文自动留隙（Chrome/Safari 支持，其余静默无操作）；`::-webkit-scrollbar` 细滚动条贴主题。
 
+### 价值链数据的折中口径（重要）
+原则：**界面只呈现可辩护的真实数据，公司间的供货关系一律不虚构。**
+- **151 家手工梳理公司**（`data/{代码}.json`，`info.curated=true`）→ 显示真实「价值链地图」（`curatedMapSection`），口径注记"手工梳理档案"。
+- **其余 ~3,920 家** → 显示「产业链位置图」（`posMapHTML`）：左栏上游行业、中间本公司+所属环节、右栏下游行业/终端市场。数据只来自两处真实来源：`data/chain_steps.json`（行业级步进表，53 条人工整理的"上游行业→下游行业+角色"）+ graph.json 环节归属。**没有公司节点、没有供货连线。**
+- `chains.json`（852KB 推断数据）已从界面彻底撤下（不再加载），文件保留在仓库仅作存档；`loadChains()/chainNodes()` 已删除。
+- 环节芯片点击 → `goToSearch()` 落地为首页搜索结果（真实环节成员）。
+- 同步范围：`pipeline/build_chain.py` 与 `data/index.json` 的 disclaimer、`locales` 的 footer/home.sub/home.note、`pipeline/prerender.py` + 4,095 个 SEO 静态页——全部改为"行业级公开关系示意（151 家手工梳理档案除外），不代表具体公司间的供货关系"。
+- 改口径时五处必须一起改：build_chain.py 模板、index.json、zh/en locales、prerender.py、（若重跑）静态页。漏一处就会出现两种口径并存。
+
 ## 已踩过的坑（改代码前看）
 
 - **canvas 不读主题自动变**：所有画布颜色是绘制时 `cssVar()` 取的快照，切主题必须重渲染——`onSettingsClick` 里 theme 分支调 `route()` 干这件事，别绕开。
