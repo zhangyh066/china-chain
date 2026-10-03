@@ -8,7 +8,8 @@
 
 产出：
   pages/i/{行业}.html    24 个行业页：统计、环节分布、龙头公司
-  pages/c/{代码}.html    公司页：行情快照、所属环节、推断上下游（文字版）
+  pages/c/{代码}.html    公司页：行情快照、所属环节、产业链位置（文字版；
+                         手工梳理公司给真实上下游档案，其余只给行业级示意）
   sitemap.xml / robots.txt
 
 用法：
@@ -153,7 +154,7 @@ def page_shell(title, desc, canonical_path, body, extra_head=""):
 {body}
 <footer>
 数据截至 {esc(GENERATED_AT)}（行情与财务：东方财富 · akshare）<br />
-申万一级行业与产业链环节归属为真实公开归类；<b>上下游连线为模型推断的模拟数据，未经核实</b>——「同属一条产业链」不等于「谁给谁供货」。不构成任何投资建议。
+申万一级行业与产业链环节归属为真实公开归类；产业链上下游为行业级公开关系示意（151 家手工梳理档案除外），不代表具体公司间的供货关系。不构成任何投资建议。
 </footer>
 </div>
 </body>
@@ -163,7 +164,29 @@ def page_shell(title, desc, canonical_path, body, extra_head=""):
 # ---------------------------------------------------------------- 载入数据
 idx = load("index.json")
 graph = load("graph.json")
-chains = load("chains.json") or {}
+steps_rows = (load("chain_steps.json") or {}).get("steps", [])
+
+
+def steps_of(ind):
+    """行业级上下游（chain_steps.json 步进表）：(上游行业, 角色) / (下游行业, 角色)，按行业去重。"""
+    up, down = [], []
+    for u, d, role in steps_rows:
+        if d == ind and all(x[0] != u for x in up):
+            up.append((u, role))
+        if u == ind and all(x[0] != d for x in down):
+            down.append((d, role))
+    return up, down
+
+
+# 每个行业的环节频次（上游/下游行业卡片里列 top 环节用）
+ind_board_freq = {}
+for _ind, _members in graph["industries"].items():
+    _freq = {}
+    for _tk in _members:
+        for _bi in graph["boardIdxOf"].get(_tk, []):
+            _freq[_bi] = _freq.get(_bi, 0) + 1
+    ind_board_freq[_ind] = sorted(_freq.items(), key=lambda kv: (-kv[1], kv[0]))
+
 GENERATED_AT = idx.get("generatedAt", date.today().isoformat())
 
 companies = idx["companies"]
@@ -196,7 +219,6 @@ def company_page(c):
     t = c["ticker"]
     q = quote1(t)
     boards = board_names_of.get(t, [])
-    link = (chains.get("links") or {}).get(t)
 
     # 行情快照
     rows = []
@@ -220,37 +242,57 @@ def company_page(c):
         f"<td class='stat'><b>{v}</b><span>{esc(k)}</span></td>" for k, v in rows[5:]
     ) + "</tr></table>") if rows else "<p class='note'>行情数据暂缺。</p>"
 
-    # 上下游（推断）：手工卡片优先（有 tier/via），否则 chains.json
-    up, down = [], []
+    # 上下游口径（折中）：手工卡片 → 真实上下游档案；其余 → 只给行业级位置，
+    # 来自 chain_steps.json 步进表（产业常识中的原料流向），不虚构公司间供货连线。
+    ind = c["industry"]
     card = load(f"{t}.json") if c.get("curated") else None
     if card:
+        up_co, down_co = [], []
         for n in card.get("nodes", []):
             item = (n.get("name") or by_ticker.get(n.get("ticker"), {}).get("name", n.get("ticker")),
-                    n.get("ticker"), n.get("role") or "", n.get("relation"))
-            (up if n.get("relation") == "upstream" else down).append(item)
-    elif link:
-        def names(entries):
-            out = []
-            for bi, tk, role in entries:
-                nm = by_ticker.get(tk, {}).get("name", tk)
-                bname = board_list[bi] if isinstance(bi, int) and bi < len(board_list) else ""
-                out.append((nm, tk, f"{role} · {bname}" if role and bname else role or bname, None))
-            return out
-        up, down = names(link.get("u", [])), names(link.get("d", []))
+                    n.get("ticker"), n.get("role") or "")
+            (up_co if n.get("relation") == "upstream" else down_co).append(item)
 
-    def rel_html(direction, items):
-        if not items:
-            return f"<p class='note'>{'上游' if direction == 'up' else '下游'}：现有步进表下推不出关系。</p>"
-        lis = "".join(
-            f"<li><span class='dir {'down' if direction == 'down' else ''}'>"
-            f"{'下游' if direction == 'down' else '上游'}</span>"
-            f"<a href='../c/{esc(tk)}.html'>{esc(nm)}</a>"
-            f"<span class='tk' style='color:var(--faint);font-size:13px'>{esc(tk)}</span>"
-            f"<span class='role'>{esc(role)}</span></li>"
-            for nm, tk, role, _ in items)
-        return f"<ul class='rel-list'>{lis}</ul>"
+        def co_html(direction, items):
+            if not items:
+                return f"<p class='note'>{'上游' if direction == 'up' else '下游'}：档案未收录。</p>"
+            lis = "".join(
+                f"<li><span class='dir {'down' if direction == 'down' else ''}'>"
+                f"{'下游' if direction == 'down' else '上游'}</span>"
+                f"<a href='../c/{esc(tk)}.html'>{esc(nm)}</a>"
+                f"<span class='tk' style='color:var(--faint);font-size:13px'>{esc(tk)}</span>"
+                f"<span class='role'>{esc(role)}</span></li>"
+                for nm, tk, role in items)
+            return f"<ul class='rel-list'>{lis}</ul>"
 
-    ind = c["industry"]
+        chain_title = "上下游关系<span class='sub'>手工梳理档案 · 人工整理</span>"
+        chain_warn = ("<div class='warn'>上下游节点与分工来自人工整理的公开资料档案；细节请以公司官方披露为准。</div>")
+        chain_body = (f"<div class='grid2'><div>{co_html('up', up_co)}</div>"
+                      f"<div>{co_html('down', down_co)}</div></div>")
+    else:
+        up_ind, down_ind = steps_of(ind)
+
+        def ind_html(direction, items):
+            if not items:
+                return (f"<p class='note'>{'上游' if direction == 'up' else '下游'}："
+                        f"步进表暂无{'上游' if direction == 'up' else '下游'}行业记录。</p>")
+            lis = []
+            for ni, role in items:
+                top_boards = ind_board_freq.get(ni, [])[:3]
+                chips = "".join(f"<span class='chip'>{esc(board_list[bi])} {n}</span>"
+                                for bi, n in top_boards)
+                lis.append(
+                    f"<li><span class='dir {'down' if direction == 'down' else ''}'>"
+                    f"{'下游' if direction == 'down' else '上游'}</span>"
+                    f"<a href='../i/{esc(ni)}.html'>{esc(ni)}</a>"
+                    f"<span class='role'>{esc(role)}</span>{chips}</li>")
+            return f"<ul class='rel-list'>{''.join(lis)}</ul>"
+
+        chain_title = "产业链位置<span class='sub'>行业级公开关系示意</span>"
+        chain_warn = ("<div class='warn'>上下游为行业级公开关系示意（产业常识中的原料流向），"
+                      "不代表具体公司间的供货关系。</div>")
+        chain_body = (f"<div class='grid2'><div>{ind_html('up', up_ind)}</div>"
+                      f"<div>{ind_html('down', down_ind)}</div></div>")
     peers = c.get("industryPeers")
     # 公司介绍（同花顺主营业务 + 巨潮概况 + 东财主营构成，见 fetch_profiles.py）
     pf = profile1(t)
@@ -298,13 +340,13 @@ def company_page(c):
 {pf_html}
 <h2>所属产业链环节<span class="sub">真实公开归类 · 同属一条产业链 ≠ 谁给谁供货</span></h2><div class="chips">{''.join(f"<span class='chip'>{esc(b)}</span>" for b in boards) or '<span class=note>无</span>'}</div>
 {'' if not peers else f'<p class="note">同行业有 {peers} 家公司在产业链图谱中与本司共享环节。</p>'}
-<h2>上下游关系<span class="sub">模型推断的模拟数据，未经核实</span></h2>
-<div class="warn">以下连线是按行业步进表 + 环节归属<b>推断的结构示意</b>，不代表真实的供货关系。</div>
-<div class="grid2"><div>{rel_html('up', up)}</div><div>{rel_html('down', down)}</div></div>
+<h2>{chain_title}</h2>
+{chain_warn}
+{chain_body}
 <span class="open-app"><a href="{SITE_BASE}/#/c/{esc(t)}">在交互图谱中打开 →</a></span>
 """
     desc = (f"{c['name']}（{t}）的产业链位置：所属{c['industry']}行业，"
-            f"归入 {len(boards)} 个产业链环节；上下游关系为模型推断示意，不构成投资建议。")
+            f"归入 {len(boards)} 个产业链环节；产业链上下游为行业级公开关系示意，不构成投资建议。")
     return page_shell(f"{c['name']}（{t}）的产业链位置 · 链谱 ChainAtlas", desc,
                       f"pages/c/{t}.html", body)
 
@@ -368,7 +410,7 @@ def industry_page(ind):
 <h2>龙头公司<span class="sub">按市值排序 · 点击进公司页</span></h2>
 <table><tr><th>公司</th><th class='num'>最新价</th><th class='num'>涨跌幅</th><th class='num'>总市值</th></tr>
 {lead_rows}</table>
-<div class="warn">行业与环节归属为真实公开归类；公司页的上下游连线为模型推断的模拟数据，未经核实。不构成投资建议。</div>
+<div class="warn">行业与环节归属为真实公开归类；公司页的产业链上下游为行业级公开关系示意（151 家手工梳理档案除外），不代表具体公司间的供货关系。不构成投资建议。</div>
 <span class="open-app"><a href="{SITE_BASE}/#/i/{quote(ind)}">在交互图谱中打开 →</a></span>
 """
     desc = (f"{ind}行业产业链图谱：{len(members)} 家 A 股上市公司、{len(dist)} 个产业链环节，"

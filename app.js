@@ -24,46 +24,35 @@ const IND_STEP = 60;               // 每次"再看 N 家"补多少
 const IND_CHAIN_CAP = 18;          // 环节芯片最多列几个（其余折进"其他"说明）
 
 /* ---- 四份数据 ----
-   index.json      4071 家：身份 + 行业 + 环节数 + 价格/涨跌幅/市值（首屏卡片用）
-   f/{代码}.json   完整行情财务，公司页按需加载（一家约 2 KB）
-   graph.json      二分图成员表：行业→公司、环节→公司、公司→环节索引
-   chains.json     上下游连线（**模型推断的模拟数据**，见页面上的标注）
-   index / graph 在启动时并行加载（首页的行业概览卡要用 graph）；
-   chains（852 KB）只在公司页加载，不拖慢首屏。 */
+   index.json        4071 家：身份 + 行业 + 环节数 + 价格/涨跌幅/市值（首屏卡片用）
+   f/{代码}.json     完整行情财务，公司页按需加载（一家约 2 KB）
+   graph.json        二分图成员表：行业→公司、环节→公司、公司→环节索引
+   chain_steps.json  行业级上下游步进表（人工整理的产业常识，53 条）：上游行业 → 下游行业 + 角色
+   data/{代码}.json  151 家手工梳理的价值链档案（人工整理的真实档案）
+
+   数据口径（折中方案）：有手工档案的公司显示真实价值链地图；其余公司只显示
+   **行业级**位置图（步进表是真实的行业间原料流向，环节归属是真实公开归类）——
+   界面不再出现虚构的公司间供货连线（chains.json 的推断数据已撤下，文件仅存档）。 */
 let graphData = null;
 let graphPromise = null;
-let chainsData = null;
-let chainsPromise = null;
-function loadChains() {
-  if (!chainsPromise) {
-    chainsPromise = getJSON("./data/chains.json")
-      .then((d) => (chainsData = d))
+let stepsData = null;
+let stepsPromise = null;
+function loadChainSteps() {
+  if (!stepsPromise) {
+    stepsPromise = getJSON("./data/chain_steps.json")
+      .then((d) => (stepsData = d))
       .catch(() => null);
   }
-  return chainsPromise;
+  return stepsPromise;
 }
-// 把 chains.json 紧凑的 [环节索引, 代码, 角色] 展开成公司页要的节点
-function chainNodes(ticker) {
-  const rec = chainsData?.links?.[ticker];
-  if (!rec) return [];
-  const out = [];
-  const push = (arr, relation) => {
-    for (const [bi, tk, role] of (arr || [])) {
-      const oi = (indexData?.companies || []).find((c) => c.ticker === tk);
-      out.push({
-        id: tk, ticker: tk,
-        name: oi ? oi.name : tk,
-        industry: oi ? oi.industry : "",
-        sector: oi ? oi.industry : "",     // 价值链地图的提示框用的是 sector 这个字段名
-        relation, tier: 1, role: role || "关联",
-        component: role || "关联",
-        boardName: graphData?.boardList?.[bi] || "",
-      });
-    }
-  };
-  push(rec.u, "upstream");
-  push(rec.d, "downstream");
-  return out;
+// 某行业的上游 / 下游行业（chain_steps.json 的步进表，行业级；同一行业去重）
+function stepsOf(ind) {
+  const up = [], down = [];
+  for (const [u, d, role] of (stepsData?.steps || [])) {
+    if (d === ind && !up.some((x) => x.ind === u)) up.push({ ind: u, role });
+    if (u === ind && !down.some((x) => x.ind === d)) down.push({ ind: d, role });
+  }
+  return { up, down };
 }
 function loadGraph() {
   if (!graphPromise) {
@@ -467,7 +456,7 @@ async function route() {
       // 其余公司的信息全部从 index.json（身份/行业）+ graph.json（所属环节/同行）推导
       const info = (indexData?.companies || []).find((c) => c.ticker === ticker);
       const [, , quote, chain, profile] = await Promise.all([
-        loadGraph(), loadChains(),
+        loadGraph(), loadChainSteps(),
         loadQuote(ticker),          // 完整财务指标，一家一份，按需
         loadChainData(),
         loadProfile(ticker),        // 公司介绍，一家一份，按需
@@ -480,12 +469,15 @@ async function route() {
       }
 
       if (!card && !info) throw new Error("unknown company");
+      // 有手工档案 = 真实价值链地图；没有就不再拼推断节点，位置图只用行业级真实数据画
+      if (card) card.curated = true;
       const data = card || {
+        curated: false,
         anchor: {
           ticker, name: info.name, industry: info.industry,
           board: info.board, exchange: info.exchange, fundamentals: null,
         },
-        nodes: chainNodes(ticker),     // 上下游来自 chains.json（推断数据）
+        nodes: [],
       };
       mergeFundamentals(data, quote);
       data.profile = profile;   // 公司介绍（可能为 null，渲染层兜底）
@@ -1782,6 +1774,80 @@ function introHTML(pf) {
     </section>`;
 }
 
+// 手工梳理公司的真实价值链地图（节点来自人工整理的档案）
+function curatedMapSection(data) {
+  return `
+    <section class="map-wrap">
+      <div class="sec-head">
+        <h2 class="sec-title">${esc(t("company.chainTitle", "价值链地图"))}</h2>
+        <span class="sec-sub">${esc(t("company.curatedSub", "手工梳理 · 节点关系经人工整理"))}</span>
+        <span class="sec-rule"></span>
+        <button class="chip" id="map-zoom" type="button" aria-pressed="${mapZoom === "fit"}">${esc(mapZoom === "fit" ? t("company.zoomFit", "适应宽度") : t("company.zoomFull", "原始尺寸"))}</button>
+      </div>
+      <p class="chain-caveat">${esc(t("company.curatedCaveat", "上下游节点与分工来自人工整理的公开资料档案；细节请以公司官方披露为准。"))}</p>
+      ${mapHTML(data)}
+    </section>`;
+}
+
+/* 行业级产业链位置图（没有手工档案的公司）：
+   只用两类真实数据——步进表（行业间原料流向的产业常识）和环节归属（公开归类）。
+   上游/下游列的是「行业」而不是具体公司，不出现虚构的供货连线。 */
+function posMapHTML(a) {
+  const { up, down } = stepsOf(a.industry);
+  const indBoards = (ni) => (graphData && graphData.industries[ni] ? indChainDist(ni) : []).slice(0, 3);
+  const indRows = (rows, dir) => rows.map(({ ind: ni, role }) => {
+    const boards = indBoards(ni);
+    return `<div class="pos-ind" style="background:${tintFor(dir, 1)}">
+        <a class="pos-ind-head" href="#/i/${encodeURIComponent(ni)}">
+          <span class="pos-ind-name">${esc(t("sector." + ni, ni))}</span>
+          <span class="pos-ind-role">${esc(role)}</span>
+          <span class="map-link-arrow" aria-hidden="true">↗</span>
+        </a>
+        ${boards.length ? `<div class="pos-boards">${boards.map((b) =>
+          `<button class="chip" type="button" data-psearch="${esc(b.name)}">${esc(b.name)}<span class="chip-n">${esc(fmtInt(b.n))}</span></button>`).join("")}</div>`
+        : ""}
+      </div>`;
+  }).join("");
+  const myBoards = boardsOf(a.ticker);
+  const selfBoards = myBoards.length
+    ? myBoards.map((b) => `<button class="chip" type="button" data-psearch="${esc(b)}">${esc(b)}<span class="chip-n">${esc(fmtInt((graphData?.boards?.[b] || []).length))}</span></button>`).join("")
+    : `<span class="sec-sub">${esc(t("company.noBoards", "这家公司没有落在已收录的产业链环节里。"))}</span>`;
+  const empty = (key, fallback) => `<div class="pos-empty">${esc(t(key, fallback))}</div>`;
+  return `
+    <section class="sec map-wrap">
+      <div class="sec-head">
+        <h2 class="sec-title">${esc(t("company.posTitle", "产业链位置"))}</h2>
+        <span class="sec-sub">${esc(t("company.posSub", "行业级公开关系示意：上游是供给来源行业，下游是需求去向行业"))}</span>
+        <span class="sec-rule"></span>
+      </div>
+      <p class="chain-caveat">${esc(t("company.posCaveat", "⚠ 上下游为行业级公开关系示意（产业常识中的原料流向），环节归属为真实公开归类；不代表具体公司间的供货关系。"))}</p>
+      <div class="posmap" id="posmap">
+        <div class="pos-lane" data-dir="up">
+          <div class="tier-label">${esc(t("company.posUp", "上游 · 供给来源"))}</div>
+          ${up.length ? indRows(up, "upstream") : empty("company.posNoUp", "步进表暂无上游行业记录")}
+        </div>
+        <div class="pos-lane pos-self">
+          <div class="tier-label">${esc(t("company.posSelf", "本公司"))}</div>
+          <div class="map-node map-anchor pos-anchor">
+            <span class="map-node-text">
+              <span class="map-node-name">${esc(a.name)}</span>
+              <span class="map-node-role">${esc(a.ticker)} · ${esc(t("sector." + a.industry, a.industry))}</span>
+            </span>
+          </div>
+          <div class="pos-boards">${selfBoards}</div>
+        </div>
+        <div class="pos-lane" data-dir="down">
+          <div class="tier-label">${esc(t("company.posDown", "下游 · 需求去向"))}</div>
+          ${down.length ? indRows(down, "downstream") : `
+            <div class="pos-ind" style="background:${tintFor("downstream", 1)}">
+              <div class="pos-ind-head"><span class="pos-ind-name">${esc(t("company.terminalName", "终端市场"))}</span></div>
+            </div>
+            ${empty("company.posNoDown", "步进表暂无下游行业记录")}`}
+        </div>
+      </div>
+    </section>`;
+}
+
 function renderCompany(data) {
   // 首次进入按视口宽度选默认值：宽屏先看全貌，窄屏保持字号可读
   if (!mapZoom) mapZoom = window.innerWidth >= 900 ? "fit" : "full";
@@ -1894,20 +1960,13 @@ function renderCompany(data) {
       </div>
     </section>` : ""}
 
-    ${nodes.length ? `
-    <section class="map-wrap">
-      <div class="sec-head">
-        <h2 class="sec-title">${esc(t("company.chainTitle", "价值链地图"))}</h2>
-        <span class="sec-sub">${esc(t("company.chainSub", ""))}</span>
-        <span class="sec-rule"></span>
-        <button class="chip" id="map-zoom" type="button" aria-pressed="${mapZoom === "fit"}">${esc(mapZoom === "fit" ? t("company.zoomFit", "适应宽度") : t("company.zoomFull", "原始尺寸"))}</button>
-      </div>
-      <p class="chain-caveat">${esc(t("company.chainCaveat", "⚠ 上下游连线为模型按行业与环节归属推断的模拟数据，未经核实；「同属一条产业链」不等于「谁给谁供货」。"))}</p>
-      ${mapHTML(data)}
-    </section>` : `
-    <section class="sec">
-      <p class="sec-sub">${esc(t("company.noCurated", "这家公司在这条链上暂时编不出上下游（它所属的环节里没有跨行业的同行）。"))}</p>
-    </section>`}`;
+    ${nodes.length ? curatedMapSection(data) : posMapHTML(a)}`;
+
+  // 位置图里的环节芯片：跳到首页搜索这个词（环节的落地形态 = 首页搜索结果）
+  document.getElementById("posmap")?.addEventListener("click", (e) => {
+    const chip = e.target.closest("[data-psearch]");
+    if (chip) goToSearch(chip.dataset.psearch);
+  });
 
   // 适应宽度 ⇄ 原始尺寸（原始尺寸下横向平移看完整链条）
   document.getElementById("map-zoom")?.addEventListener("click", (e) => {
