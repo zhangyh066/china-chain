@@ -60,3 +60,14 @@
 2. 本地 `python serve.py 8123`，双主题各走一遍：`#/`（hero + 大环）、`#/worldmap`（小圆饼）、`#/i/电子`、`#/m/电子`（大环图）、`#/c/000063`（价值链地图衬底）、`#/vision`
 3. 设置面板切换主题后画布颜色跟随（不跟随 = 哪里写死了颜色）
 4. 刷新后主题保持（不保持 = 首帧脚本和 applyTheme 不一致）
+
+## 部署（本机网络限制）
+
+本机 `github.com:443` 被阻断，`git push` 不可用；`api.github.com` 正常。
+推送流程：本地正常 `git commit` → 用 Git Data API 推送（脚本模板在会话 `/tmp/gh_push2.py`，
+要点：逐文件从 `git cat-file blob HEAD:<path>` 取规范化字节建 blob → 建树 → 建提交 →
+PATCH `refs/heads/main`；blob 必须取 git 对象而不是工作区文件，因为 `locales/*.json` 和
+`pages/style.css` 工作区是 CRLF；**不要用 `gh api --input -` 传中文 payload**——
+Windows 下 stdin 会被按 GBK 重编码，提交消息变乱码，一律用 urllib 发请求）。
+推送后把 API 返回的提交对象按 `tree/parents/author/committer/message` 重建字节、
+`git hash-object -t commit -w --stdin` 写入本地对象库，再 `git update-ref` 对齐两端。
