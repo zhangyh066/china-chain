@@ -68,6 +68,12 @@
   /* ---- 空状态猫头鹰像素画 ---- */
   --owl-1: #232C3A; --owl-2: #38445A; --owl-3: #5E6B7C; --owl-e: #D8DFE9;
 
+  /* ---- 材质层（深色专属；浅色下为透明/无） ---- */
+  --inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0.04);   /* 卡片顶缘高光 */
+  --glow-amber: 0 0 16px rgba(232, 163, 61, 0.22);       /* 琥珀选中态的环境辉光 */
+  --glow-green: 0 0 7px rgba(47, 182, 124, 0.75);        /* 状态灯荧光 */
+  --hero-grid: rgba(255, 255, 255, 0.024);               /* hero 衬底网格 */
+
   /* ---- 度量 ---- */
   /* 锐利边角：终端版面是方的 */
   --radius: 3px;
@@ -132,6 +138,12 @@
   --band-dn1: #EFE0CE; --band-dn2: #F7EFE4;
 
   --owl-1: #E8EBEF; --owl-2: #CDD4DB; --owl-3: #AEB7C1; --owl-e: #454C55;
+
+  /* 浅色研报保持纸面平整：无辉光、无网格、无顶缘高光 */
+  --inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0);
+  --glow-amber: none;
+  --glow-green: none;
+  --hero-grid: transparent;
 
   --font-d: var(--serif);
 }
@@ -1139,4 +1151,161 @@ button { font-family: inherit; font-size: inherit; }
 @media print {
   .site-header, .site-footer, .saved-tray, .search-fab-wrap, .load-rule, .tile-tip { display: none; }
   body { background: #fff; color: #111418; }
+}
+
+/* ==========================================================================
+   v3.1 · 终端仪式感 / 材质 / 命令面板
+   ========================================================================== */
+
+/* ---- 主题切换过渡：换肤本身成为一个动作（260ms 后由 JS 摘掉这个类） ------- */
+.theme-anim *, .theme-anim *::before, .theme-anim *::after {
+  transition: background-color 0.22s ease, color 0.22s ease,
+              border-color 0.22s ease, box-shadow 0.22s ease,
+              fill 0.22s ease, stroke 0.22s ease !important;
+}
+
+/* ---- 选中文字：用强调色，不用系统默认蓝 ----------------------------------- */
+::selection { background: var(--primary); color: var(--on-primary); }
+
+/* ---- 滚动条：细、贴主题、不抢眼 ------------------------------------------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border: 3px solid var(--bg);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+/* ---- 中西文混排自动留隙（Chrome/Safari 已支持；不支持则静默无操作） -------- */
+body { text-autospace: normal; }
+
+/* ---- 材质层：顶缘高光 + 琥珀辉光 + 状态灯荧光（浅色下令牌为空，自动无效） --- */
+.card, .pie-card, .chain-list, .search-list, .tray-drawer, .modal, .palette {
+  box-shadow: var(--inset-hi);
+}
+.card:hover { box-shadow: var(--inset-hi), var(--shadow-lift); }
+.pie-card:hover { box-shadow: var(--inset-hi), var(--shadow); }
+.chip[aria-pressed="true"], .seg-btn[aria-pressed="true"] {
+  box-shadow: var(--inset-hi), var(--glow-amber);
+}
+.header-left::before { box-shadow: var(--glow-green); }
+
+/* hero 衬底网格：只衬 hero，向下渐隐，不出现在内容区 */
+.hero { position: relative; }
+.hero::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background-image:
+    linear-gradient(var(--hero-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hero-grid) 1px, transparent 1px);
+  background-size: 30px 30px;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 85%);
+  mask-image: linear-gradient(180deg, #000 0%, transparent 85%);
+}
+
+/* ---- 终端启动序列 ----------------------------------------------------------
+   当天首次访问时播放：index.html 的内联脚本在首帧前打好 data-boot="on"，
+   不播放的日子直接 display:none，零闪烁。真实等待数据加载，不是假进度。
+   9s 兜底淡出：JS 万一异常也不会把页面盖死。 */
+.boot-console {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: flex-start;
+  padding: 34px 30px;
+  background: #0D1117;   /* 启动屏永远是深色终端，不随主题 */
+  color: #93A0B0; font-family: var(--mono); font-size: 12.5px; line-height: 2.1;
+  transition: opacity 0.26s ease;
+  animation: boot-failsafe 0.4s ease 9s forwards;
+}
+html:not([data-boot="on"]) .boot-console { display: none; }
+.boot-console.out { opacity: 0; pointer-events: none; }
+.boot-inner { max-width: 620px; }
+.boot-line { opacity: 0; transform: translateY(3px); transition: opacity 0.18s ease, transform 0.18s ease; }
+.boot-line.on { opacity: 1; transform: none; }
+.boot-head { color: #5E6B7C; letter-spacing: 0.14em; }
+.boot-ok { color: #2FB67C; }
+.boot-val { color: #E8A33D; }
+.boot-dots { color: #38445A; }
+.boot-caret {
+  display: inline-block; width: 7px; height: 13px; vertical-align: -2px;
+  background: #E8A33D; animation: caret-blink 0.9s steps(2, start) infinite;
+}
+@keyframes boot-failsafe { to { opacity: 0; visibility: hidden; } }
+
+/* ---- 全景图谱卡片入场：依次浮起（--i 由 JS 写入，no-anim 时被全局压制） ---- */
+.pies .pie-card {
+  animation: card-in 0.38s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 26ms);
+}
+@keyframes card-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+
+/* ---- 价值链地图连接线：首次绘制时"长"出来（pathLength=100 归一化） --------- */
+.vcm-links.animate path {
+  stroke-dasharray: 100; stroke-dashoffset: 100;
+  animation: vcm-draw 0.55s ease-out forwards;
+}
+@keyframes vcm-draw { to { stroke-dashoffset: 0; } }
+
+/* ---- 命令面板（⌘K） ------------------------------------------------------- */
+.palette-backdrop {
+  position: fixed; inset: 0; z-index: 70;
+  background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(2px);
+  opacity: 0; transition: opacity 0.16s ease;
+}
+.palette-backdrop.open { opacity: 1; }
+.palette {
+  position: fixed; top: 11vh; left: 50%; z-index: 71;
+  width: min(560px, calc(100vw - 32px));
+  transform: translateX(-50%) translateY(-6px);
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: var(--radius); box-shadow: var(--inset-hi), var(--shadow-lift);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.palette.open { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
+.palette-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+}
+.palette-prompt { font-family: var(--mono); color: var(--primary); font-weight: 700; }
+.palette-input {
+  flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+  color: var(--text); font-size: 15px; font-family: inherit;
+}
+.palette-input::placeholder { color: var(--text-faint); }
+.palette-list { max-height: 46vh; overflow-y: auto; padding: 6px; }
+.palette-group {
+  padding: 7px 10px 3px; font-family: var(--mono); font-size: 10px;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint);
+}
+.pal-item {
+  display: flex; align-items: baseline; gap: 10px; width: 100%;
+  padding: 8px 10px; text-align: left; cursor: pointer;
+  background: transparent; border: none; border-radius: var(--radius-sm);
+  color: var(--text); border-left: 2px solid transparent;
+}
+.pal-item.active { background: var(--hover); border-left-color: var(--primary); }
+.pal-item-name { font-size: 13.5px; }
+.pal-item-sub {
+  margin-left: auto; font-family: var(--mono); font-size: 10.5px;
+  color: var(--text-faint); font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 45%;
+}
+.palette-empty { padding: 18px 14px; font-size: 12.5px; color: var(--text-faint); }
+.palette-foot {
+  padding: 8px 14px; border-top: 1px solid var(--border);
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-faint);
+}
+
+/* 搜索框里的 ⌘K 提示键帽：提示命令面板的存在，可点 */
+.search-kbd {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  padding: 1px 7px; cursor: pointer; user-select: none;
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-faint);
+  background: var(--surface-soft); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); transition: color 0.15s ease, border-color 0.15s ease;
+}
+.search-kbd:hover { color: var(--primary); border-color: var(--primary); }
+.search { padding-right: 52px; }
+@media (max-width: 620px) {
+  .search { padding-right: 12px; }   /* 手机端顶栏搜索框本就隐藏 */
 }

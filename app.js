@@ -593,6 +593,26 @@ function typeTitle(el, text, speed, onDone) {
   setTimeout(tick, speed);
 }
 
+/* ---- 数字滚动（odometer）：终端/数据新闻的标配。
+   元素带 data-count="终值" 才会滚；关动效时直接显示终值（HTML 里本来就写着终值）。 */
+function countUp(el, dur = 850) {
+  const target = Number(el.dataset.count);
+  if (!target || motionOff()) { delete el.dataset.count; return; }
+  const t0 = performance.now();
+  const step = (now) => {
+    if (!el.isConnected) return;
+    const p = Math.min(1, (now - t0) / dur);
+    const e = 1 - Math.pow(1 - p, 3);              // ease-out cubic
+    el.textContent = fmtInt(Math.round(target * e));
+    if (p < 1) requestAnimationFrame(step);
+    else delete el.dataset.count;
+  };
+  requestAnimationFrame(step);
+}
+function countUpIn(root) {
+  root.querySelectorAll("[data-count]").forEach((el) => countUp(el));
+}
+
 /* ---- 首页 ---------------------------------------------------------------- */
 function changeClass(v) {
   if (v == null) return "flat";
@@ -650,10 +670,10 @@ function heroHTML() {
       <p class="hero-slogan">${esc(t("home.slogan", ""))}</p>
       <p class="hero-sub">${esc(t("home.sub", ""))}</p>
       <div class="hero-stats">
-        <span class="hero-stat"><b>${esc(fmtInt(tot.companies))}</b><span>${esc(t("stat.companies", "家上市公司"))}</span></span>
-        <span class="hero-stat"><b>${esc(fmtInt(tot.industries))}</b><span>${esc(t("stat.sectors", "个申万一级行业"))}</span></span>
-        <span class="hero-stat"><b>${esc(fmtInt(tot.boards))}</b><span>${esc(t("stat.boards", "个产业链环节"))}</span></span>
-        <span class="hero-stat"><b>${esc(fmtInt(tot.edges))}</b><span>${esc(t("stat.edges", "条公司—环节关联"))}</span></span>
+        <span class="hero-stat"><b data-count="${tot.companies}">${esc(fmtInt(tot.companies))}</b><span>${esc(t("stat.companies", "家上市公司"))}</span></span>
+        <span class="hero-stat"><b data-count="${tot.industries}">${esc(fmtInt(tot.industries))}</b><span>${esc(t("stat.sectors", "个申万一级行业"))}</span></span>
+        <span class="hero-stat"><b data-count="${tot.boards}">${esc(fmtInt(tot.boards))}</b><span>${esc(t("stat.boards", "个产业链环节"))}</span></span>
+        <span class="hero-stat"><b data-count="${tot.edges}">${esc(fmtInt(tot.edges))}</b><span>${esc(t("stat.edges", "条公司—环节关联"))}</span></span>
       </div>
       <p class="hero-note">${noteHTML()}</p>
     </section>
@@ -787,12 +807,18 @@ function drawMarketRing(cv, hover = -1, dragTo = -1) {
   const CYCLE = partCycle();
   const OTHER = partOther();
 
+  // 扫入动画：cv._introT ∈ [0,1]，只画 12 点顺时针到 cutoff 的部分（驱动器在 afterHomeBody）
+  const intro = cv._introT == null ? 1 : cv._introT;
+  const cutoff = -Math.PI / 2 + Math.PI * 2 * intro;
+
   // 环
   segs.forEach((sg, i) => {
+    if (sg.a0 >= cutoff) return;               // 扫入还没走到这一段
+    const a1 = Math.min(sg.a1, cutoff);
     const on = i === hover;
     ctx.beginPath();
-    ctx.arc(cx, cy, rOut, sg.a0, sg.a1);
-    ctx.arc(cx, cy, rIn, sg.a1, sg.a0, true);
+    ctx.arc(cx, cy, rOut, sg.a0, a1);
+    ctx.arc(cx, cy, rIn, a1, sg.a0, true);
     ctx.closePath();
     // 段色按序号取三色循环 —— 相邻必不同（金色已归数据色，所以高亮改成描边）
     ctx.fillStyle = sg.ind ? CYCLE[i % CYCLE.length] : OTHER;
@@ -807,8 +833,9 @@ function drawMarketRing(cv, hover = -1, dragTo = -1) {
   // 名字不画在环上（旋转文字会倒着），改成：悬停弹方块 + 环下面一排横排行业名 chips
   cv._labelInfo = { total: segs.length, shown: 0, all: false, hint: "hover" };
 
-  // 中心读数
+  // 中心读数（扫入结束后再出现，免得"4,071"比环先到）
   ctx.textAlign = "center";
+  if (intro < 1) return;
   if (hover >= 0 && segs[hover]) {
     const sg = segs[hover];
     const q = indexData?.quotes || {};
@@ -1026,7 +1053,27 @@ function homeBodyHTML() {
 // 首页正文渲染完之后要画环（canvas 必须先插进 DOM 才能量尺寸）
 function afterHomeBody() {
   const cv = document.getElementById("market-ring");
-  if (cv) { drawMarketRing(cv, -1); setupMarketRing(cv); }
+  if (!cv) return;
+  // 大环扫入：从 12 点顺时针把各段依次"画"出来。悬停重画共享 cv._introT，
+  // 所以动画中途鼠标划上来不会跳变，只会带着当前进度继续画。
+  if (!motionOff() && cv._introT == null) {
+    cv._introT = 0;
+    const t0 = performance.now();
+    const dur = 720;
+    const step = (now) => {
+      if (!cv.isConnected) return;
+      const p = Math.min(1, (now - t0) / dur);
+      cv._introT = 1 - Math.pow(1 - p, 3);
+      drawMarketRing(cv, cv._hover ?? -1);
+      if (p < 1) requestAnimationFrame(step);
+      else cv._introT = 1;
+    };
+    requestAnimationFrame(step);
+  } else {
+    cv._introT = 1;
+    drawMarketRing(cv, -1);
+  }
+  setupMarketRing(cv);
 }
 
 function renderHome(fresh) {
@@ -1043,6 +1090,7 @@ function renderHome(fresh) {
 function setupHomeChrome() {
   const titleEl = document.getElementById("home-hero-title");
   if (titleEl) typeTitle(titleEl, t("home.title", "链谱（ChainAtlas）"), motionOff() ? 0 : 55);
+  countUpIn(app);
   setupSpentHero();
 }
 
@@ -1212,8 +1260,8 @@ async function renderIndustryPage(ind) {
     <header class="ind-head">
       <h1 class="ind-title">${esc(t("sector." + ind, ind))}</h1>
       <div class="ind-stats">
-        <span class="ind-stat"><b>${esc(fmtInt(st.count))}</b><span>${esc(t("stat.companies", "家上市公司"))}</span></span>
-        <span class="ind-stat"><b>${esc(fmtInt(dist.length))}</b><span>${esc(t("stat.boards", "个产业链环节"))}</span></span>
+        <span class="ind-stat"><b data-count="${st.count}">${esc(fmtInt(st.count))}</b><span>${esc(t("stat.companies", "家上市公司"))}</span></span>
+        <span class="ind-stat"><b data-count="${dist.length}">${esc(fmtInt(dist.length))}</b><span>${esc(t("stat.boards", "个产业链环节"))}</span></span>
         <span class="ind-stat"><b>${esc(fmtCap(st.cap))}</b><span>${esc(t("ind.capLabel", "市值合计"))}</span></span>
         <span class="ind-stat"><b class="${changeClass(st.avg)}">${st.avg == null ? "—" : esc(fmtPct(st.avg))}</b><span>${esc(t("ind.avgLabel", "今日平均涨跌"))}</span></span>
       </div>
@@ -1255,6 +1303,7 @@ async function renderIndustryPage(ind) {
     </section>`;
 
   // 事件直接绑在新元素上（每次整页渲染都会重建，不会叠加）
+  countUpIn(app);
   document.getElementById("ind-chains")?.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-chain]");
     if (!btn) return;
@@ -1663,10 +1712,22 @@ function drawMap() {
       const c1 = x1 + dx * dirSign;
       const c2 = x2 - dx * dirSign;
       paths += `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} C${c1.toFixed(1)} ${y1.toFixed(1)}, ${c2.toFixed(1)} ${y2.toFixed(1)}, ${x2.toFixed(1)} ${y2.toFixed(1)}"`
-        + ` fill="none" stroke="${accent}" stroke-width="1.5" stroke-opacity="0.45" stroke-linecap="round"/>`;
+        + ` pathLength="100" fill="none" stroke="${accent}" stroke-width="1.5" stroke-opacity="0.45" stroke-linecap="round"/>`;
     });
   });
   svg.innerHTML = paths;
+
+  // 连接线首次绘制时从一端"长"到另一端（pathLength=100 把 dash 归一化，CSS 动画才有通用尺子）。
+  // 只放一次：展开分组、切缩放、resize 都会重画，每次都重放就成抖了。
+  // svg 元素随公司页整页重建，所以换一家公司仍然播得到。
+  if (!svg._drew && paths && !motionOff()) {
+    svg.classList.add("animate");
+    const ps = [...svg.querySelectorAll("path")];
+    ps.forEach((p, i) => { p.style.animationDelay = `${Math.min(i * 36, 380)}ms`; });
+    // 延迟最大的是最后一条，它播完才摘类——早摘会把还没轮到的线切成瞬间到位
+    ps[ps.length - 1].addEventListener("animationend", () => svg.classList.remove("animate"), { once: true });
+  }
+  svg._drew = true;
 
   fitMap();
 }
@@ -2010,7 +2071,7 @@ async function renderWorldMap() {
 
 function renderTilesPage(g) {
   const q = indexData?.quotes || {};
-  const tiles = g.industryList.map((ind) => {
+  const tiles = g.industryList.map((ind, tileIdx) => {
     const parts = industryParts(ind, g);
     const members = g.industries[ind] || [];
     let cap = 0, chgSum = 0, chgN = 0;
@@ -2037,7 +2098,7 @@ function renderTilesPage(g) {
           </li>` : "");
 
     return `
-      <a class="pie-card" href="#/m/${encodeURIComponent(ind)}" data-ind="${esc(ind)}">
+      <a class="pie-card" href="#/m/${encodeURIComponent(ind)}" data-ind="${esc(ind)}" style="--i:${tileIdx}">
         <div class="pie-head">
           <h3 class="pie-title">${esc(t("sector." + ind, ind))}</h3>
           <span class="pie-chg ${changeClass(avg)}">${avg == null ? "—" : esc(fmtPct(avg))}</span>
@@ -2284,8 +2345,8 @@ async function renderIndustryRingPage(ind) {
       <header class="ring-head">
         <h1 class="ring-title">${esc(t("sector." + ind, ind))}</h1>
         <div class="ring-stats">
-          <span class="ind-stat"><b>${esc(fmtInt(parts.total))}</b><span>${esc(t("stat.companies", "家上市公司"))}</span></span>
-          <span class="ind-stat"><b>${esc(fmtInt(parts.ranked.length))}</b><span>${esc(t("stat.boards", "个产业链环节"))}</span></span>
+          <span class="ind-stat"><b data-count="${parts.total}">${esc(fmtInt(parts.total))}</b><span>${esc(t("stat.companies", "家上市公司"))}</span></span>
+          <span class="ind-stat"><b data-count="${parts.ranked.length}">${esc(fmtInt(parts.ranked.length))}</b><span>${esc(t("stat.boards", "个产业链环节"))}</span></span>
           <span class="ind-stat"><b>${esc(fmtCap(cap))}</b><span>${esc(t("ind.capLabel", "市值合计"))}</span></span>
           <span class="ind-stat"><b class="${changeClass(avg)}">${avg == null ? "—" : esc(fmtPct(avg))}</b><span>${esc(t("ind.avgLabel", "今日平均涨跌"))}</span></span>
         </div>
@@ -2320,6 +2381,7 @@ async function renderIndustryRingPage(ind) {
     </section>
     <div class="tile-tip" id="tile-tip" hidden></div>`;
 
+  countUpIn(app);
   const cv = document.getElementById("ring-canvas");
   let lastW = 0;
   const redraw = () => {
@@ -2335,6 +2397,23 @@ async function renderIndustryRingPage(ind) {
       if (note) note.textContent = t("ring.note", "");
     }
   };
+  // 大环扫入：与首页同一节奏。悬停重画共享 cv._introT，中途鼠标上来不跳变。
+  if (!motionOff()) {
+    cv._introT = 0;
+    const t0 = performance.now();
+    const dur = 720;
+    const step = (now) => {
+      if (!cv.isConnected) return;
+      const p = Math.min(1, (now - t0) / dur);
+      cv._introT = 1 - Math.pow(1 - p, 3);
+      drawIndustryRing(cv, ind, g, null, cv._hoverSector ?? -1);
+      if (p < 1) requestAnimationFrame(step);
+      else cv._introT = 1;
+    };
+    requestAnimationFrame(step);
+  } else {
+    cv._introT = 1;
+  }
   redraw();
   setupRingHover(cv, ind, g);
 
@@ -2511,24 +2590,30 @@ function drawIndustryRing(cv, ind, g, sel = null, hoverSector = -1) {
   const GOLD = cssVar("--gold", "#E8A33D");
   const LINE = cssVar("--border-strong", "#38445A");
   const q = indexData?.quotes || {};
+  // 扫入动画：与首页大环同一套约定（cv._introT ∈ [0,1]，12 点顺时针展开）
+  const intro = cv._introT == null ? 1 : cv._introT;
+  const cutoff = intro * Math.PI * 2;          // 归一化角度（12 点起顺时针）
 
   // ① 外圈弧段 = 环节。**每一段都画** —— 之前只画"有 3 家以上"的，
   //    结果大量环节在图上完全不存在，看起来像数据缺失。
   // 124 段时节弧很密，2px 的线几乎看不见（用户就是因此说"只剩下点了"），加粗一档
   const arcW = data.arcs.length > 60 ? 2.6 : 3.2;
   for (const s of data.arcs) {
+    if (s.n0 >= cutoff) continue;              // 扫入还没走到这段弧
+    const a1 = Math.min(s.a1, s.a1 - Math.max(0, s.n1 - cutoff));
     const on = hoverSector === s.bi || (sel && sel.bi === s.bi);
     ctx.beginPath();
-    ctx.arc(cx, cy, R + 14, s.a0, s.a1);
+    ctx.arc(cx, cy, R + 14, s.a0, a1);
     ctx.strokeStyle = on ? GOLD : LINE;
     ctx.globalAlpha = on ? 1 : 0.85;
     ctx.lineWidth = on ? 4 : arcW;
     ctx.stroke();
   }
-  // ①b 环外环节名：横排 + 细引线（绝不沿半径排字，那样左半边是倒的）
+  // ①b 环外环节名：横排 + 细引线（绝不沿半径排字，那样左半边是倒的）。
+  // 扫入期间不标名字——标签是静态信息，跟着弧段长出来反而乱。
   const labelPx = narrow ? 10 : 11;
   ctx.font = `500 ${labelPx}px ${font}`;
-  const labels = ringSideLabels(ctx, data.arcs, cx, cy, R, side, labelPx);
+  const labels = intro >= 1 ? ringSideLabels(ctx, data.arcs, cx, cy, R, side, labelPx) : [];
   for (const L of labels) {
     const on = hoverSector === L.s.bi || (sel && sel.bi === L.s.bi);
     const ax = cx + Math.cos(L.s.mid) * (R + 15), ay = cy + Math.sin(L.s.mid) * (R + 15);
@@ -2564,6 +2649,7 @@ function drawIndustryRing(cv, ind, g, sel = null, hoverSector = -1) {
   // ② 公司点
   const comp = sel ? ringCompanions(sel.tk, ind, g, data.dots) : null;
   for (const d of data.dots) {
+    if (d.ang + Math.PI / 2 > cutoff) continue;   // 扫入还没走到这个点
     const f = q[d.tk] || {};
     const v = f.changePercent;
     const isSelf = sel && d.tk === sel.tk;
@@ -2608,9 +2694,10 @@ function drawIndustryRing(cv, ind, g, sel = null, hoverSector = -1) {
     ctx.globalAlpha = 1;
   }
 
-  // ④ 中心读数
+  // ④ 中心读数（扫入期间留白，结束后再落内容）
   ctx.textAlign = "center";
   const y0 = cy - 18;
+  if (intro < 1) return;
   if (sel) {
     const f = q[sel.tk] || {};
     const mine = (g.boardIdxOf?.[sel.tk] || []).map((bi) => g.boardList[bi]);
@@ -2873,7 +2960,7 @@ function searchMatches(term, limit = 8) {
   for (const c of (indexData?.companies || [])) {
     const name = c.name.toLowerCase();
     const ticker = c.ticker.toLowerCase();
-    const sector = String(t("sector." + c.sector, c.sector)).toLowerCase();
+    const sector = String(t("sector." + c.industry, c.industry)).toLowerCase();
     let score = 0;
     if (ticker === q) score = 100;
     else if (name === q) score = 95;
@@ -2909,7 +2996,7 @@ function renderSearchList(term) {
         <button class="search-row${i === 0 ? " active" : ""}" type="button" role="option"
                 data-ticker="${esc(c.ticker)}" aria-selected="${i === 0}">
           <span class="search-row-name">${esc(c.name)}</span>
-          <span class="search-row-sector">${esc(t("sector." + c.sector, c.sector))}</span>
+          <span class="search-row-sector">${esc(t("sector." + c.industry, c.industry))}</span>
           <span class="search-row-ticker">${esc(c.ticker)}</span>
         </button>`).join("")
     : `<div class="search-empty">${esc(t("search.none", "没有匹配的公司"))}</div>`;
@@ -2935,6 +3022,184 @@ function goToCompany(ticker) {
   const m = document.getElementById("search-m");
   if (m) m.value = "";
   location.hash = `#/c/${encodeURIComponent(ticker)}`;
+}
+
+/* ---- 命令面板（⌘K / Ctrl-K / /） ------------------------------------------
+   四组结果：页面（导航）/ 行业 / 产业链环节 / 公司。全键盘：↑↓ 移动、Enter 打开、
+   Esc 关闭；另有 g h / g m / g v 的路由直达。DOM 首次打开时才建，语言切换后销毁
+   重建（文案跟语言包走）。 */
+let palEl = null, palBackdrop = null, palInput = null, palList = null;
+let palItems = [];         // 当前面板里的可执行项，与 .pal-item 行一一对应
+let palActive = -1;
+
+// 环节不是页面，它的落地形态是"首页搜索结果里带上这个词"——环节芯片区会接住它
+function goToSearch(name) {
+  searchTerm = name;
+  searchChain = null;
+  if (searchEl) searchEl.value = name;
+  const m = document.getElementById("search-m");
+  if (m) m.value = name;
+  if (parseRoute().name === "home") renderHome(false);
+  else location.hash = "#/";
+}
+
+function paletteEnsure() {
+  if (palEl) return;
+  palBackdrop = document.createElement("div");
+  palBackdrop.className = "palette-backdrop";
+  palEl = document.createElement("div");
+  palEl.className = "palette";
+  palEl.setAttribute("role", "dialog");
+  palEl.setAttribute("aria-modal", "true");
+  palEl.setAttribute("aria-label", t("palette.placeholder", "搜索公司、行业、环节或页面…"));
+  palEl.innerHTML = `
+    <div class="palette-head">
+      <span class="palette-prompt" aria-hidden="true">&gt;</span>
+      <input class="palette-input" type="text" autocomplete="off" spellcheck="false"
+             placeholder="${esc(t("palette.placeholder", "搜索公司、行业、环节或页面…"))}" />
+    </div>
+    <div class="palette-list" role="listbox"></div>
+    <div class="palette-foot">${esc(t("palette.hint", "↑↓ 选择 · Enter 打开 · Esc 关闭"))}</div>`;
+  document.body.append(palBackdrop, palEl);
+  palInput = palEl.querySelector(".palette-input");
+  palList = palEl.querySelector(".palette-list");
+
+  palInput.addEventListener("input", () => renderPalette(palInput.value));
+  palInput.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); setPalActive(palActive + 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setPalActive(palActive - 1); }
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      const item = palItems[palActive] || palItems[0];
+      if (item) { closePalette(); item.run(); }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();    // 别漏给 document 级处理器再关一次别的
+      closePalette();
+    }
+  });
+  palList.addEventListener("click", (e) => {
+    const btn = e.target.closest(".pal-item");
+    if (!btn) return;
+    const item = palItems[Number(btn.dataset.i)];
+    if (item) { closePalette(); item.run(); }
+  });
+  palList.addEventListener("mousemove", (e) => {
+    const btn = e.target.closest(".pal-item");
+    if (btn && Number(btn.dataset.i) !== palActive) setPalActive(Number(btn.dataset.i));
+  });
+  palBackdrop.addEventListener("click", closePalette);
+}
+
+const paletteOpen = () => !!(palEl && palEl.classList.contains("open"));
+
+function openPalette() {
+  paletteEnsure();
+  palBackdrop.classList.add("open");
+  palEl.classList.add("open");
+  palInput.value = "";
+  renderPalette("");
+  palInput.focus();
+}
+
+function closePalette() {
+  if (!palEl) return;
+  palBackdrop.classList.remove("open");
+  palEl.classList.remove("open");
+  palInput.blur();   // 焦点不还回 body 的话，g h / / 这些全局键会被"输入框守卫"吞掉
+}
+
+function setPalActive(i) {
+  const rows = palList ? [...palList.querySelectorAll(".pal-item")] : [];
+  if (!rows.length) { palActive = -1; return; }
+  palActive = ((i % rows.length) + rows.length) % rows.length;
+  rows.forEach((el, k) => {
+    el.classList.toggle("active", k === palActive);
+    el.setAttribute("aria-selected", String(k === palActive));
+  });
+  rows[palActive].scrollIntoView({ block: "nearest" });
+}
+
+function renderPalette(qRaw) {
+  const q = qRaw.trim().toLowerCase();
+  const groups = [];
+
+  // 页面：空查询也列——给"不知道搜什么、只想导航"一个出口
+  const pages = [
+    { name: t("nav.home", "首页"), hash: "#/", keys: "g h" },
+    { name: t("nav.worldmap", "全景图谱"), hash: "#/worldmap", keys: "g m" },
+    { name: t("nav.vision", "我们的观点"), hash: "#/vision", keys: "g v" },
+  ].filter((p) => !q || p.name.toLowerCase().includes(q));
+  if (pages.length) {
+    groups.push({
+      label: t("palette.pages", "页面"),
+      items: pages.map((p) => ({ name: p.name, sub: p.keys, run: () => { location.hash = p.hash; } })),
+    });
+  }
+
+  if (q) {
+    const inds = (indexData?.industryList || [])
+      .filter((ind) => ind.toLowerCase().includes(q)
+        || String(t("sector." + ind, ind)).toLowerCase().includes(q))
+      .slice(0, 4);
+    if (inds.length) {
+      groups.push({
+        label: t("palette.industries", "行业"),
+        items: inds.map((ind) => ({
+          name: t("sector." + ind, ind),
+          sub: `${fmtInt((graphData?.industries?.[ind] || []).length)} ${t("ind.unitCompanies", "家")}`,
+          run: () => { location.hash = `#/i/${encodeURIComponent(ind)}`; },
+        })),
+      });
+    }
+    const boards = (graphData?.boardList || []).filter((b) => b.toLowerCase().includes(q)).slice(0, 4);
+    if (boards.length) {
+      groups.push({
+        label: t("palette.boards", "产业链环节"),
+        items: boards.map((b) => ({
+          name: b,
+          sub: `${fmtInt((graphData?.boards?.[b] || []).length)} ${t("ind.unitCompanies", "家")}`,
+          run: () => goToSearch(b),
+        })),
+      });
+    }
+    const comps = searchMatches(qRaw, 6);
+    if (comps.length) {
+      groups.push({
+        label: t("palette.companies", "公司"),
+        items: comps.map((c) => ({
+          name: c.name,
+          sub: `${c.ticker} · ${t("sector." + c.industry, c.industry)}`,
+          run: () => goToCompany(c.ticker),
+        })),
+      });
+    }
+  }
+
+  palItems = [];
+  let html = "";
+  for (const g of groups) {
+    html += `<div class="palette-group">${esc(g.label)}</div>`;
+    for (const it of g.items) {
+      it.name = typeof it.name === "string" ? it.name : String(it.name);
+      palItems.push(it);
+      html += `<button class="pal-item" type="button" role="option" data-i="${palItems.length - 1}" aria-selected="false">`
+        + `<span class="pal-item-name">${esc(it.name)}</span>`
+        + `<span class="pal-item-sub">${esc(it.sub)}</span></button>`;
+    }
+  }
+  palList.innerHTML = html || `<div class="palette-empty">${esc(t("palette.empty", "没有匹配的结果"))}</div>`;
+  setPalActive(palItems.length ? 0 : -1);
+}
+
+// 语言切换后面板文案要跟着换：直接销毁，下次打开时按新语言重建
+function destroyPalette() {
+  if (!palEl) return;
+  palEl.remove();
+  palBackdrop.remove();
+  palEl = palBackdrop = palInput = palList = null;
+  palItems = [];
+  palActive = -1;
 }
 
 /* ---- 设置模态 ------------------------------------------------------------ */
@@ -2993,7 +3258,17 @@ function onSettingsClick(e) {
   saveSettings();
   [...btn.parentElement.children].forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
 
-  if (key === "theme") { applyTheme(); route(); return; }   // 画布色是绘制时读 cssVar 的，必须重渲染当前路由
+  if (key === "theme") {
+    // 换肤本身成为一个动作：theme-anim 给全元素挂 220ms 颜色过渡，播完即摘，
+    // 免得后续 hover 等状态色也被拖慢。画布色是绘制时读 cssVar 的，必须重渲染当前路由。
+    if (!motionOff()) {
+      document.documentElement.classList.add("theme-anim");
+      setTimeout(() => document.documentElement.classList.remove("theme-anim"), 260);
+    }
+    applyTheme();
+    route();
+    return;
+  }
   if (key === "accent") { applyAccent(); return; }
   if (key === "animations") { applyMotion(); return; }   // 下次渲染生效
   if (parseRoute().name === "home") {
@@ -3098,6 +3373,53 @@ function buildLangSwitcher() {
     `<option value="${esc(l.code)}" ${l.code === getLocale() ? "selected" : ""}>${esc(l.label)}</option>`).join("");
 }
 
+/* ---- 终端启动序列：当天首次访问才播放 -------------------------------------
+   data-boot="on" 由 index.html 的内联脚本在首帧前判定（当天没播过 + 允许动效），
+   不播放的日子元素直接 display:none，连挂载都没有成本。
+   这里是"真进度"：index/graph 两行等真实加载落定才打 OK——网络慢时它真的多停
+   一会儿，这正是这台"终端"要说的事。CSS 里有 9s 兜底淡出，JS 异常也盖不死页面。 */
+function startBootConsole() {
+  const el = document.getElementById("boot-console");
+  if (!el) return null;
+  if (document.documentElement.dataset.boot !== "on" || motionOff()) {
+    el.remove();
+    delete document.documentElement.dataset.boot;
+    return null;
+  }
+  const lines = [...el.querySelectorAll(".boot-line")];
+  const show = (i) => lines[i] && lines[i].classList.add("on");
+  const t0 = performance.now();
+  show(0);                            // CHAINATLAS TERMINAL · BOOT SEQUENCE
+  setTimeout(() => show(1), 120);     // AUTH OK
+  const fill = (id, text) => {
+    const v = document.getElementById(id);
+    if (v) v.textContent = text;
+  };
+  return {
+    indexDone() {
+      fill("boot-index", `${fmtInt(indexData?.totals?.companies || 0)} COMPANIES OK`);
+      show(2);
+    },
+    graphDone() {
+      fill("boot-graph", `${fmtInt(graphData?.boardList?.length || 0)} BOARDS OK`);
+      show(3);
+      setTimeout(() => show(4), 90);  // RENDER + 光标
+    },
+    async done() {
+      // 最短驻留 900ms：加载太快时也要让人读完这几行，不然仪式感白做
+      const wait = Math.max(0, 900 - (performance.now() - t0));
+      await new Promise((r) => setTimeout(r, wait));
+      el.getAnimations().forEach((a) => a.cancel());   // 摘掉 9s 兜底，淡出改由 .out 控制
+      el.classList.add("out");
+      try {
+        const now = new Date();
+        localStorage.setItem("cnchain.bootDay", `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`);
+      } catch { /* ignore */ }
+      setTimeout(() => { el.remove(); delete document.documentElement.dataset.boot; }, 300);
+    },
+  };
+}
+
 async function boot() {
   // 滚动位置由我们自己管（返回首页时要还原），所以别让浏览器也来恢复一次
   if ("scrollRestoration" in history) history.scrollRestoration = "manual";
@@ -3117,6 +3439,7 @@ async function boot() {
   applyMotion();
   loadSaved();
   mapZoom = settings.zoom || mapZoom;
+  const bootUI = startBootConsole();   // 启动序列开跑（今天播过/关动效则返回 null）
 
   await initI18n();
   if (loadDepth > 0) {
@@ -3133,9 +3456,11 @@ async function boot() {
   } catch {
     indexData = { companies: [], totals: {} };
   }
+  bootUI?.indexDone();
 
   // graph 给首页的行业概览卡提供环节分布（行情的三个数已随 index.json 下来）。
   await loadGraph();
+  bootUI?.graphDone();
   // 把 index.json 里的轻量行情字段展开成 quotes 映射，下游渲染代码不用改。
   // 三个数全缺的公司不建条目——卡片本来就会按"没有数字"渲染。
   indexData.quotes = {};
@@ -3243,6 +3568,7 @@ async function boot() {
     await setLocale(e.target.value);
     refreshChrome();
     refreshSettings();
+    destroyPalette();      // 面板文案跟语言包走，销毁后下次打开时按新语言重建
     route();
   });
 
@@ -3252,12 +3578,55 @@ async function boot() {
     }
   });
 
+  // Esc 的关闭顺序：命令面板 > 设置模态（搜索下拉的 Esc 由搜索框自己处理）
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (paletteOpen()) { closePalette(); return; }
     if (settingsOpen()) closeSettings();
   });
 
-  window.addEventListener("hashchange", route);
+  // 全局快捷键：⌘K / Ctrl-K 开关命令面板；"/" 打开；g h / g m / g v 路由直达。
+  // 输入框里一律不抢键（面板内的 ↑↓/Enter/Esc 由面板自己的监听器处理）。
+  let gPending = 0;
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === "k" || e.key === "K")) {
+      e.preventDefault();
+      if (paletteOpen()) closePalette(); else openPalette();
+      return;
+    }
+    if (e.target.closest("input, textarea, select, [contenteditable]")) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;   // Shift 按下时 e.key 是大写
+    if (k === "/") {
+      e.preventDefault();
+      openPalette();
+      return;
+    }
+    if (k === "g") { gPending = Date.now(); return; }
+    if (gPending && Date.now() - gPending < 1500) {
+      const dest = { h: "#/", m: "#/worldmap", v: "#/vision" }[k];
+      gPending = 0;
+      if (dest) { location.hash = dest; return; }
+    } else {
+      gPending = 0;
+    }
+  });
+
+  // 搜索框里的键帽：提示命令面板的存在，可点；非 Mac 平台显示真实键位
+  const kbd = document.getElementById("search-kbd");
+  if (kbd) {
+    if (!/Mac|iPhone|iPad/.test(navigator.platform || "")) kbd.textContent = "Ctrl K";
+    kbd.addEventListener("click", openPalette);
+    kbd.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPalette(); }
+    });
+  }
+
+  window.addEventListener("hashchange", () => { closePalette(); route(); });
+
+  // 启动序列先谢幕，首个视图再亮相——hero 打字机、数字滚动、大环扫入
+  // 都在幕布揭开后才开始，编排感才成立
+  await bootUI?.done();
 
   // 首个视图真正渲染完之后，才释放进度线——
   // 在此之前它一直亮着，覆盖了 i18n + index.json 的加载

@@ -19,19 +19,37 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <meta name="theme-color" content="#0D1117" />
   <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png" />
-  <!-- 主题/强调色的首屏不闪：在样式表加载前就把 data-theme / data-accent 打到 <html> 上，
-       避免重载时先闪一下默认外观。与 app.js 里 applyTheme/applyAccent 用同一个 storage key。
-       主题只有浅色才打属性（:root 默认深色）；强调色只有非默认才打，且仅浅色主题消费它。 -->
+  <!-- 主题/强调色/启动序列的首屏不闪：在样式表加载前就把属性打到 <html> 上。
+       data-theme：浅色才打（:root 默认深色）；data-accent：非默认才打（仅浅色消费）；
+       data-boot：当天首次访问且允许动效时打出，终端启动序列才会出场（见 .boot-console）。 -->
   <script>
     try {
       var s = JSON.parse(localStorage.getItem("cnchain.settings") || "{}");
       if (s.theme === "light") document.documentElement.dataset.theme = "light";
       if (s.accent && s.accent !== "navy") document.documentElement.dataset.accent = s.accent;
+      var now = new Date();
+      var today = now.getFullYear() + "-" + (now.getMonth() + 1) + "-" + now.getDate();
+      var reduced = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (localStorage.getItem("cnchain.bootDay") !== today && !reduced && s.animations !== false) {
+        document.documentElement.dataset.boot = "on";
+      }
     } catch (e) { /* ignore */ }
   </script>
   <link rel="stylesheet" href="./styles.css?v=__BUILD__" />
 </head>
 <body>
+  <!-- 终端启动序列：当天首次访问播放（data-boot 由 head 内联脚本在首帧前判定）。
+       行内容由 app.js 驱动——真实等待 index/graph 加载，不是假进度；
+       CSS 里有 9s 兜底淡出，JS 异常也不会把页面盖死。 -->
+  <div id="boot-console" class="boot-console" aria-hidden="true">
+    <div class="boot-inner">
+      <div class="boot-line boot-head">CHAINATLAS TERMINAL · BOOT SEQUENCE</div>
+      <div class="boot-line">&gt; AUTH ........... <span class="boot-ok">OK</span></div>
+      <div class="boot-line">&gt; LOAD index.json <span class="boot-dots">.......</span> <span class="boot-val" id="boot-index"></span></div>
+      <div class="boot-line">&gt; LOAD graph.json <span class="boot-dots">.......</span> <span class="boot-val" id="boot-graph"></span></div>
+      <div class="boot-line">&gt; RENDER <span class="boot-caret"></span></div>
+    </div>
+  </div>
   <!-- 路由加载细线：请求资源时贴在 header 下沿的 2px 横线。
        它随 .boot 一起出厂，这样首屏加载（i18n + index.json，早于标题绘制）
        不用等模块解析就被盖住了；app.js 接手之后由它驱动。
@@ -53,11 +71,13 @@
       <a id="nav-worldmap" class="nav-link" href="#/worldmap"><span id="nav-worldmap-text">全景图谱</span></a>
     </div>
     <div class="header-tools">
-      <!-- 搜索框要能"跳转"，不只是过滤：输入给候选下拉，回车/点击直接进公司页 -->
+      <!-- 搜索框要能"跳转"，不只是过滤：输入给候选下拉，回车/点击直接进公司页。
+           右侧的键帽提示 ⌘K 命令面板的存在，可点。 -->
       <div class="search-wrap">
         <input id="search" type="search" class="search" autocomplete="off"
                role="combobox" aria-expanded="false" aria-controls="search-list"
                aria-autocomplete="list" aria-label="搜索公司" />
+        <kbd id="search-kbd" class="search-kbd" role="button" tabindex="0" title="命令面板">⌘K</kbd>
         <div id="search-list" class="search-list" role="listbox" aria-label="搜索建议" hidden></div>
       </div>
       <select id="lang" class="lang" aria-label="语言"></select>
