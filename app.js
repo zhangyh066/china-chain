@@ -196,7 +196,7 @@ const OWL_GRID = [
   ".....233332.....",
   "................",
 ];
-const OWL_PAL = { "1": "#E4DED2", "2": "#C9C1B1", "3": "#B0A794", "e": "#5F5A52" };
+const OWL_PAL = { "1": "#E8EBEF", "2": "#CDD4DB", "3": "#AEB7C1", "e": "#454C55" };
 function owlSVG(px = 6) {
   const cols = Math.max(...OWL_GRID.map((r) => r.length));
   const rows = OWL_GRID.length;
@@ -633,6 +633,7 @@ function heroHTML() {
   const tot = (indexData && indexData.totals) || { companies: 0, links: 0, sectors: 0, nodes: 0 };
   return `
     <section class="hero" id="home-hero">
+      <p class="hero-kicker">${esc(t("home.kicker", "ChainAtlas · A 股产业链知识图谱"))}</p>
       <h1 id="home-hero-title"></h1>
       <p class="hero-slogan">${esc(t("home.slogan", ""))}</p>
       <p class="hero-sub">${esc(t("home.sub", ""))}</p>
@@ -765,13 +766,13 @@ function drawMarketRing(cv, hover = -1, dragTo = -1) {
   const rOut = R, rIn = R - band;
   cv._segs = segs;
   cv._R = R;
-  const INK = cssVar("--text", "#14181D");
-  const FAINT = cssVar("--text-faint", "#8A8A84");
-  const INK2 = cssVar("--text", "#14181D");
+  const INK = cssVar("--text", "#111418");
+  const FAINT = cssVar("--text-faint", "#8A919B");
+  const INK2 = cssVar("--text", "#111418");
   const RISEC = cssVar("--rise", "#AE2A1E");
   const FALLC = cssVar("--fall", "#0E6B4A");
-  const GOLD = cssVar("--gold", "#13375E");
-  const MUTED = cssVar("--border-strong", "#C9C3B5");
+  const GOLD = cssVar("--gold", "#0A2540");
+  const MUTED = cssVar("--border-strong", "#C7CDD5");
 
   // 环
   segs.forEach((sg, i) => {
@@ -1961,12 +1962,12 @@ function industryParts(ind, g) {
   return { ind, total: members.length, ranked, byTicker };
 }
 
-/* 环节切片：藏青明度阶 + 炭灰锚点，"fewer hues, more shades"；
+/* 环节切片：深藏青明度阶 + 炭灰锚点，"fewer hues, more shades"；
    红绿留给涨跌，故此处不含红绿。
    三个色分别是深藏青、灰蓝、炭灰——同族明度阶 + 一个中性锚，
    相邻扇区一眼可分，且都远离涨红/跌绿。 */
-const PART_CYCLE = ["#1C3A5E", "#7A8CA3", "#3A3F45"];
-const PART_OTHER = "#CBC6BC";
+const PART_CYCLE = ["#0F3460", "#6E86A3", "#363D46"];
+const PART_OTHER = "#C9CFD7";
 const PART_TONES = PART_CYCLE;
 
 /* ---- 全景图谱：24 个小圆饼 ------------------------------------------------
@@ -2109,8 +2110,8 @@ function drawDonut(cv, ind, g, hover = -1) {
   ctx.globalAlpha = 1;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  const ink = cssVar("--text", "#14181D");
-  const faint = cssVar("--text-faint", "#8A8A84");
+  const ink = cssVar("--text", "#111418");
+  const faint = cssVar("--text-faint", "#8A919B");
   if (hover >= 0 && slices[hover]) {
     const s = slices[hover];
     let name = s.name;
@@ -2486,12 +2487,12 @@ function drawIndustryRing(cv, ind, g, sel = null, hoverSector = -1) {
   cv._R = R;                          // 悬停命中判定要用同一个半径
 
   const font = getComputedStyle(document.body).fontFamily;
-  const INK = cssVar("--text", "#14181D");
-  const FAINT = cssVar("--text-faint", "#8A8A84");
+  const INK = cssVar("--text", "#111418");
+  const FAINT = cssVar("--text-faint", "#8A919B");
   const RISE = cssVar("--rise", "#AE2A1E");
   const FALL = cssVar("--fall", "#0E6B4A");
-  const GOLD = cssVar("--gold", "#13375E");
-  const LINE = cssVar("--border-strong", "#C9C3B5");
+  const GOLD = cssVar("--gold", "#0A2540");
+  const LINE = cssVar("--border-strong", "#C7CDD5");
   const q = indexData?.quotes || {};
 
   // ① 外圈弧段 = 环节。**每一段都画** —— 之前只画"有 3 家以上"的，
@@ -2943,7 +2944,7 @@ function settingsBodyHTML() {
       { v: false, label: t("settings.anim.off", "关闭") },
     ])}
     ${segRow(t("settings.accent", "主色"), "accent", [
-      { v: "navy", label: t("settings.accent.navy", "藏青"), dot: "#13375E" },
+      { v: "navy", label: t("settings.accent.navy", "藏青"), dot: "#0A2540" },
       { v: "forest", label: t("settings.accent.forest", "松绿"), dot: "#1E4A3C" },
       { v: "graphite", label: t("settings.accent.graphite", "石墨"), dot: "#2A2E35" },
     ])}
