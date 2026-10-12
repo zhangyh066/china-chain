@@ -1,0 +1,45 @@
+name: 收盘后更新数据
+
+# 北京时间 18:30（UTC 10:30），周一至周五收盘后跑
+# ⚠️ 东财接口对境外 runner IP 可能限流：run_all 失败时数据不更新、不提交，
+#    站点继续展示仓库里的旧数据 + 页面上原有的"截至日期"，不会回退或报错。
+#    commit 步骤用 if: success() 把守——前面任何一步红，就当天的更新作废。
+on:
+  schedule:
+    - cron: "30 10 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # 把更新后的 data/ 提交回 main（push 会再触发 site.yml 的验证+部署）
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装依赖
+        run: pip install akshare pandas
+
+      - name: 跑数据管线（六步 + 日线历史）
+        run: python pipeline/run_all.py --with-history
+
+      - name: 数据一致性自检
+        run: python pipeline/ci_check.py
+
+      - name: 提交 data/ 变更
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "data/ 无变化，不提交"
+          else
+            git commit -m "data: 收盘后数据更新 $(date -u +%Y-%m-%d)"
+            git push
+          fi

@@ -16,17 +16,23 @@ A 股上市公司产业链知识图谱：**4,071 家公司**、**24 个申万一
 
 | 路由 | 页面 | 说明 |
 |---|---|---|
-| `#/` | 首页 | 行业总览：24 张产业链概览卡（公司数 / 环节数 / 市值 / 平均涨跌 / 环节分布 / 龙头）；全局搜索支持公司名、代码、行业与产业链环节 |
-| `#/i/{行业}` | 行业页 | 行业统计、环节分布筛选、公司列表（搜索 / 板块筛选 / 分页加载） |
-| `#/c/{代码}` | 公司页 | 行情与财务指标、所属产业链环节、共享环节的同行、五列价值链地图 |
+| `#/` | 首页 | 行业总览：24 张产业链概览卡（公司数 / 环节数 / 市值 / 平均涨跌 / 环节分布 / 龙头）；**市场趋势**（全市场近一年等权指数走势 + 行业一年涨跌榜）；全局搜索支持公司名、代码、行业与产业链环节 |
+| `#/i/{行业}` | 行业页 | 行业统计、**行业与环节近一年走势多线图**（点环节图例联动筛选）、环节分布筛选、公司列表（搜索 / 板块筛选 / **排序（涨幅 / 市值 / 名称）** / 分页加载 / **导出 CSV**） |
+| `#/c/{代码}` | 公司页 | 行情与财务指标（**标注截至日期，超 10 天显示"已过期 N 天"警示**）、**近一年走势图**（前复权日线）、所属产业链环节、共享环节的同行、五列价值链地图（**可导出 PNG**）、**加入对比** |
+| `#/x/{代码,代码,…}` | 公司对比 | 2–4 家公司并排对比 12 项指标；从公司页"加入对比"进对比筐，或直接用 URL 分享 |
 | `#/worldmap` | 全景图谱 | 24 张行业小圆饼：扇形 = 产业链环节，面积 = 公司数（兼容旧路由 `#/atlas`） |
 | `#/m/{行业}` | 行业环图 | 单行业大图：环上公司点（大小 = 市值、颜色 = 涨跌），外圈弧段 = 环节，悬停点亮链条 |
-| `#/vision` | 观点 | Markdown 正文渲染 |
+| `#/vision` | 观点 | Markdown 正文渲染（入口在页脚，不占顶栏） |
 
 其他特性：
 
 - **中英双语**一键切换（`locales/` 加语言文件即可扩展，双层 fallback 缺词不炸）
 - **自选股**：加入 / 移除 / 抽屉管理，本地持久化
+- **公司对比**：最多 4 家并排，对比筐本地持久化，对比页 URL 可直接分享
+- **导出**：行业公司列表一键 CSV（含 BOM，Excel 直开）；手工价值链地图导出 PNG
+- **数据自动更新**：GitHub Actions 工作日盘后跑 `pipeline/run_all.py --with-history`，
+  自检通过才提交 `data/` 并自动重新部署；失败保留旧数据，页面显示截至日期与过期天数
+- **数据纠错入口**：页脚直达 GitHub Issues 纠错模板
 - **三档主色主题**（藏青 / 松绿 / 石墨），首屏绘制前注入、不闪主题
 - **响应式**：移动端专用布局与悬浮搜索，13 处 `prefers-reduced-motion` 适配
 - **PWA**：可安装为独立应用（`manifest.webmanifest` + 程序化生成图标）
@@ -89,14 +95,19 @@ china-chain/
 │   ├── index.json          4,071 家公司索引：身份 + 行业 + 环节数
 │   │                       + 价格/涨跌幅/市值（首屏卡片首帧用）
 │   ├── f/{代码}.json       完整行情财务，公司页按需加载（一家约 2 KB）
+│   ├── h/{代码}.json       近一年前复权日线（走势图用，fetch_history.py 生成）
 │   ├── p/{代码}.json       公司介绍：主营业务/经营范围/主营构成
 │   │                       （同花顺 + 巨潮 + 东财，fetch_profiles.py 生成）
 │   ├── graph.json          行业→公司、环节→公司二分图成员表
 │   ├── chains.json         推断的上下游连线（仅公司页按需加载）
 │   ├── chain/chain.json    行业步进表等链数据
+│   ├── trends/             趋势指数（build_trends.py 生成）：index.json 全市场+24 行业，
+│   │                       i/{行业}.json 行业指数+前 12 环节指数（等权，基期=100）
 │   └── {代码}.json         151 家手工价值链公司卡片
 └── pipeline/           数据管线（fetch → select → build）
+    ├── run_all.py          一键编排：①–⑥ 顺序跑完（--with-history 追加日线历史）
     ├── fetch_real.py       拉取行情/财务（akshare，全市场仅 4 次请求）
+    ├── fetch_history.py    逐股抓近一年前复权日线 → data/h/（断点续抓、自适应节流）
     ├── fetch_profiles.py   抓取公司介绍（同花顺主营业务 + 巨潮概况 + 东财主营构成，
     │                       一家一份 data/p/，断点续抓）
     ├── fetch_industries.py 拉取申万一级行业成分股
@@ -104,6 +115,7 @@ china-chain/
     ├── chain_concepts.py   产业链概念白名单（规则本体）
     ├── select_companies.py 三道判据筛选 → 入图清单 + 可审计剔除记录
     ├── build_chain.py      组装 data/ 全市场数据层
+    ├── build_trends.py     日线聚合 → 行业/环节等权指数 → data/trends/
     ├── fabricate_chains.py 推断上下游连线（步进表 + 方向裁决）
     ├── 筛选标准.md          筛选规则、实测数字与验证指标
     ├── palette_search.py   行业配色搜索（色盲安全约束下的优化）
@@ -116,6 +128,12 @@ china-chain/
 按顺序执行（Windows 下将 `python` 换成 `.venv/Scripts/python.exe`）：
 
 ```bash
+python pipeline/run_all.py --with-history   # 一键跑完下面 ①–⑥ + 日线历史
+```
+
+或逐步执行：
+
+```bash
 cd pipeline
 python fetch_real.py         # ① 行情/财务
 python fetch_industries.py   # ② 申万一级行业
@@ -126,6 +144,11 @@ python fabricate_chains.py   # ⑥ 推断上下游 → chains.json
 ```
 
 ①②③ 均有磁盘缓存，只需联网跑一次；之后改口径从第 ④ 步重跑即可。
+日线历史单独跑 `python fetch_history.py`（断点续抓；`--batch N` 分轮、`--codes a,b` 指定补抓；
+东财限流时可用 `HIST_SLEEP=3` 放慢节奏）。日线齐备后 `python build_trends.py` 聚合出行业/环节等权指数。
+**自动更新**：`.github/workflows/data-update.yml` 每个工作日北京时间 18:30 在 GitHub Actions 跑
+`run_all.py --with-history`，`ci_check.py` 通过才提交 `data/` 并触发重新部署；失败保留旧数据
+（东财接口对境外 runner 可能限流，失败时本地手动跑是备用路径）。
 数据源暂时不可达、只想改口径重跑时，可用 `QUOTES_FILE=<旧版合并行情文件> python build_chain.py`
 沿用旧行情重建（"截至日期"会继承旧文件，不会假装数据变新了）。
 改域名/托管地址后，用 `SITE_BASE=https://新地址 python prerender.py` 重生成静态页与

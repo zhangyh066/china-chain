@@ -19,6 +19,10 @@ _verify/*
 # 公司介绍的抓取缓存（可由 data/p/ 直接重建，不必入库）
 pipeline/real/profiles/
 
+# 日线历史的抓取缓存（可由 data/h/ 直接重建，不必入库）
+pipeline/real/hist/
+pipeline/real/hist_failed.json
+
 # 系统/编辑器杂项
 .DS_Store
 Thumbs.db

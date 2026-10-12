@@ -66,8 +66,6 @@
       </button>
       <a id="nav-home" class="nav-link" href="#/">首页</a>
       <span class="nav-div" aria-hidden="true"></span>
-      <a id="nav-vision" class="nav-link" href="#/vision">我们的观点</a>
-      <span class="nav-div" aria-hidden="true"></span>
       <a id="nav-worldmap" class="nav-link" href="#/worldmap"><span id="nav-worldmap-text">全景图谱</span></a>
     </div>
     <div class="header-tools">
@@ -88,6 +86,7 @@
 
   <footer class="site-footer">
     <span id="footer-note"></span>
+    <span id="footer-links"></span>
   </footer>
 
   <!-- 手机端的悬浮搜索：<=560px 时顶栏搜索框隐藏，改用拇指区的圆钮唤起搜索条。 -->
@@ -117,6 +116,28 @@
       <div class="tray-panel" id="tray-panel"></div>
       <div class="tray-drawer-foot" id="tray-foot">
         <button id="tray-clear" class="tray-clear" type="button">清空</button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- 对比筐：与自选抽屉同款结构，停在它上方。最多 4 家，"开始对比"跳进 #/x/ 路由。 -->
+  <div id="cmp-tray" class="saved-tray cmp-tray" data-open="false">
+    <button id="cmp-toggle" class="tray-bar" type="button" aria-expanded="false" aria-controls="cmp-drawer">
+      <span class="tray-star" aria-hidden="true">⇄</span>
+      <span class="tray-label" id="cmp-label">对比</span>
+      <span class="tray-count" id="cmp-count">0</span>
+      <span class="tray-chev" aria-hidden="true">▸</span>
+    </button>
+    <aside id="cmp-drawer" class="tray-drawer" aria-label="对比清单">
+      <div class="tray-drawer-head">
+        <span class="tray-drawer-title"><span class="tray-drawer-star" aria-hidden="true">⇄</span> <span id="cmp-title-text">对比清单</span></span>
+        <span class="tray-drawer-count" id="cmp-drawer-count">0/4</span>
+        <button id="cmp-close" class="tray-close" type="button" aria-label="关闭">✕</button>
+      </div>
+      <div class="tray-panel" id="cmp-panel"></div>
+      <div class="tray-drawer-foot cmp-foot" id="cmp-foot">
+        <button id="cmp-go" class="cmp-go" type="button" disabled>开始对比 (0/4)</button>
+        <button id="cmp-clear" class="tray-clear" type="button">清空</button>
       </div>
     </aside>
   </div>

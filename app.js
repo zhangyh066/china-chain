@@ -18,6 +18,7 @@ let prevRouteName = "home";
 let indTerm = "";                  // 行业页内的关键词
 let indSelChain = null;            // 选中的产业链环节
 let indSelMarket = null;           // 选中的市场板块（沪市主板/深市主板/创业板/科创板）
+let indSort = "default";           // 列表排序：default | chg（涨幅）| cap（市值）| name（名称）
 let indLimit = 60;                 // 已显示多少家
 let indCurrent = null;             // 当前行业，切行业时重置上面几个
 const IND_STEP = 60;               // 每次"再看 N 家"补多少
@@ -308,6 +309,188 @@ function setupSaved() {
   renderTray();
 }
 
+/* ---- 对比筐（持久化，最多 4 家） --------------------------------------------
+   结构照抄自选清单：localStorage 持久化 + 全局 [data-compare] 委托 +
+   左下角抽屉。区别只在容量上限和出口（"开始对比"跳进 #/x/ 路由）。 */
+const COMPARE_KEY = "cnchain.compare";
+const COMPARE_MAX = 4;
+let compareList = [];              // 加入顺序
+let compareSet = new Set();
+
+function loadCompare() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(COMPARE_KEY) || "[]");
+    compareList = Array.isArray(arr) ? arr.map((x) => String(x).toUpperCase()) : [];
+  } catch { compareList = []; }
+  compareList = compareList.slice(0, COMPARE_MAX);
+  compareSet = new Set(compareList);
+}
+function persistCompare() {
+  try { localStorage.setItem(COMPARE_KEY, JSON.stringify(compareList)); } catch { /* ignore */ }
+}
+const isCompared = (ticker) => compareSet.has(String(ticker).toUpperCase());
+
+// 返回 "added" | "removed" | "full"——满了不抛错，由调用方决定怎么提示
+function toggleCompare(ticker) {
+  const tk = String(ticker).toUpperCase();
+  let result;
+  if (compareSet.has(tk)) {
+    compareSet.delete(tk);
+    compareList = compareList.filter((x) => x !== tk);
+    result = "removed";
+  } else if (compareList.length >= COMPARE_MAX) {
+    return "full";
+  } else {
+    compareSet.add(tk);
+    compareList.push(tk);
+    result = "added";
+  }
+  persistCompare();
+  syncCompareBtns(tk);
+  renderCmpTray();
+  return result;
+}
+
+// 小字提示条：对比筐满了等一次性提醒用。单例，自动隐去。
+let toastTimer = 0;
+function showToast(text) {
+  let el = document.getElementById("toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "toast";
+    el.className = "toast";
+    el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.classList.add("on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("on"), 2400);
+}
+
+// 把一个代码的对比状态同步到当前 DOM 里所有相关的对比按钮上
+function syncCompareBtns(tk) {
+  const on = compareSet.has(tk);
+  const label = on ? t("cmp.remove", "移出对比") : t("cmp.add", "加入对比");
+  document.querySelectorAll(`[data-compare="${cssEscape(tk)}"]`).forEach((el) => {
+    el.classList.toggle("on", on);
+    el.setAttribute("aria-pressed", String(on));
+    el.setAttribute("aria-label", label);
+    el.title = label;
+    const g = el.querySelector(".cmp-glyph");
+    if (g) g.textContent = on ? "✓" : "＋";
+    const txt = el.querySelector(".cmp-text");
+    if (txt) txt.textContent = on ? t("cmp.onlist", "已加入对比") : t("cmp.add", "加入对比");
+  });
+}
+
+// 公司页用的带文字药丸：沿用同一套 data-compare / .cmp-glyph 钩子
+function comparePill(ticker) {
+  const on = isCompared(ticker);
+  return `<button class="cmp-pill ${on ? "on" : ""}" type="button" data-compare="${esc(ticker)}"`
+    + ` aria-pressed="${on}">`
+    + `<span class="cmp-glyph" aria-hidden="true">${on ? "✓" : "＋"}</span>`
+    + `<span class="cmp-text">${esc(on ? t("cmp.onlist", "已加入对比") : t("cmp.add", "加入对比"))}</span></button>`;
+}
+
+// 同行表每行的小圆钮（嵌在 <a> 里，全局委托里会拦住跳转）
+function compareDot(ticker) {
+  const on = isCompared(ticker);
+  const label = on ? t("cmp.remove", "移出对比") : t("cmp.add", "加入对比");
+  return `<button class="cmp-dot ${on ? "on" : ""}" type="button" data-compare="${esc(ticker)}"`
+    + ` aria-pressed="${on}" aria-label="${esc(label)}" title="${esc(label)}">`
+    + `<span class="cmp-glyph" aria-hidden="true">${on ? "✓" : "＋"}</span></button>`;
+}
+
+function renderCmpTray() {
+  const countEl = document.getElementById("cmp-count");
+  const drawerCountEl = document.getElementById("cmp-drawer-count");
+  const panel = document.getElementById("cmp-panel");
+  const foot = document.getElementById("cmp-foot");
+  const go = document.getElementById("cmp-go");
+  if (countEl) countEl.textContent = String(compareList.length);
+  if (drawerCountEl) drawerCountEl.textContent = `${compareList.length}/${COMPARE_MAX}`;
+  if (foot) foot.style.display = compareList.length ? "" : "none";
+  if (go) {
+    go.disabled = compareList.length < 2;
+    go.textContent = t("cmp.go", "开始对比 ({n}/{max})")
+      .replace("{n}", compareList.length).replace("{max}", COMPARE_MAX);
+  }
+  if (!panel) return;
+
+  if (!compareList.length) {
+    panel.innerHTML = `<div class="tray-empty">`
+      + `<span>${esc(t("cmp.empty", "还没有对比公司"))}</span>`
+      + `<span class="tray-empty-hint">${esc(t("cmp.emptyHint", "点公司页或同行列表里的对比按钮收进来，2–4 家开比。"))}</span>`
+      + `</div>`;
+    return;
+  }
+  const byTicker = new Map((indexData?.companies || []).map((c) => [c.ticker.toUpperCase(), c]));
+  const rows = compareList.map((tk) => {
+    const c = byTicker.get(tk);
+    const name = c ? c.name : tk;
+    return `<div class="tray-row">
+        <a class="tray-row-link" href="#/c/${encodeURIComponent(tk)}">
+          <span class="tray-row-ticker">${esc(tk)}</span>
+          <span class="tray-row-name">${esc(name)}</span>
+        </a>
+        <button class="tray-row-x" type="button" data-compare="${esc(tk)}" aria-label="${esc(t("cmp.remove", "移出对比"))}" title="${esc(t("cmp.remove", "移出对比"))}">✕</button>
+      </div>`;
+  }).join("");
+  panel.innerHTML = `<div class="tray-rows">${rows}</div>`;
+}
+
+// 对比抽屉 + 委托式对比按钮，只在启动时挂一次
+function setupCompare() {
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-compare]");
+    if (!btn) return;
+    e.preventDefault();        // 同行行内的小按钮嵌在卡片的 <a> 里，别让它跳转
+    e.stopPropagation();
+    const r = toggleCompare(btn.dataset.compare);
+    if (r === "full") {
+      // 满了：按钮抖一下 + 小字提示（站内没有现成的 toast，这里是最小实现）
+      btn.classList.remove("shake");
+      void btn.offsetWidth;
+      btn.classList.add("shake");
+      showToast(t("cmp.full", "对比最多 {max} 家，先移除一家").replace("{max}", COMPARE_MAX));
+    }
+  });
+
+  const bar = document.getElementById("cmp-toggle");
+  const tray = document.getElementById("cmp-tray");
+  const setOpen = (open) => {
+    if (!tray) return;
+    tray.dataset.open = String(open);
+    if (bar) bar.setAttribute("aria-expanded", String(open));
+  };
+  if (bar && tray) bar.addEventListener("click", () => setOpen(tray.dataset.open !== "true"));
+  document.getElementById("cmp-close")?.addEventListener("click", () => setOpen(false));
+  document.getElementById("cmp-clear")?.addEventListener("click", () => {
+    const cleared = compareList.slice();
+    compareList = []; compareSet = new Set();
+    persistCompare();
+    cleared.forEach(syncCompareBtns);
+    renderCmpTray();
+  });
+  document.getElementById("cmp-go")?.addEventListener("click", () => {
+    if (compareList.length < 2) return;
+    setOpen(false);
+    location.hash = "#/x/" + compareList.map(encodeURIComponent).join(",");
+  });
+
+  const drawer = document.getElementById("cmp-drawer");
+  drawer?.addEventListener("click", (e) => {
+    // 行内 ✕ 走全局 [data-compare] 委托（会移除），这里只管"点公司名跳转后收起"
+    if (e.target.closest(".tray-row-link")) setOpen(false);
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && tray && tray.dataset.open === "true") setOpen(false);
+  });
+  renderCmpTray();
+}
+
 /* ---- 工具 ---------------------------------------------------------------- */
 // 数据里带的说明文案用 <b> 标重点。整段 esc() 会把标签转义成字面文本（页面上真的显示
 // "<b>真实公开数据</b>"），所以这里先全转义、再只把 <b> / </b> 放回来 —— 白名单就这两个。
@@ -389,6 +572,71 @@ function loadProfile(ticker) {
   }
   return profileCache.get(ticker);
 }
+// 近一年日收盘价（前复权，约 250 条升序）：data/h/{代码}.json，一家一份、按需加载。
+// 文件可能不存在——404 静默吞掉，页面只是不渲染走势图，不算错。
+const histCache = new Map();
+function loadHistory(ticker) {
+  if (!histCache.has(ticker)) {
+    histCache.set(ticker, getJSON(`./data/h/${encodeURIComponent(ticker)}.json`)
+      .then((d) => (d && Array.isArray(d.points) ? d : null))
+      .catch(() => null));
+  }
+  return histCache.get(ticker);
+}
+
+/* 指数走势（pipeline/build_trends.py 产出）：基期=100 的等权指数点位序列。
+   data/trends/index.json      → 首页全市场指数（market + dates）
+   data/trends/i/{行业}.json   → 行业指数（industry）+ 成员数前 12 的环节指数（segments）
+   文件缺失、断网、或序列是空的（该行业日线覆盖不足）都静默降级：不渲染走势图。 */
+let trendsIndexPromise = null;
+let trendsIndex = null;
+function loadTrendsIndex() {
+  return trendsIndexPromise ||= getJSON("./data/trends/index.json")
+    .then((d) => (trendsIndex = (d && Array.isArray(d.dates) && Array.isArray(d.market) && d.market.length ? d : null)))
+    .catch(() => (trendsIndex = null));
+}
+const indTrendsCache = new Map();
+function loadIndustryTrends(ind) {
+  if (!indTrendsCache.has(ind)) {
+    indTrendsCache.set(ind, getJSON(`./data/trends/i/${encodeURIComponent(ind)}.json`)
+      .then((d) => (d && Array.isArray(d.dates) && Array.isArray(d.industry) && d.industry.length ? d : null))
+      .catch(() => null));
+  }
+  return indTrendsCache.get(ind);
+}
+
+/* 锂电产业链看板：data/chain/lithium.json（9 阶段 + 各环节等权指数，基期 100；
+   后台补抓期间个别环节序列可能还是 []——渲染层按"数据补齐中"降级，不算错），
+   data/price/lithium.json（碳酸锂期货主力日线）。缺失/断网静默降级。 */
+let lithiumPromise = null;
+let lithiumData = null;
+function loadLithium() {
+  return lithiumPromise ||= getJSON("./data/chain/lithium.json")
+    .then((d) => (lithiumData = (d && Array.isArray(d.stages) ? d : null)))
+    .catch(() => (lithiumData = null));
+}
+let liPricePromise = null;
+function loadLiPrice() {
+  return liPricePromise ||= getJSON("./data/price/lithium.json")
+    .then((d) => (d && Array.isArray(d.points) && d.points.length >= 20 ? d : null))
+    .catch(() => null);
+}
+
+/* ---- 行情新鲜度 ------------------------------------------------------------
+   indexData.generatedAt 是行情快照的日期。超过 10 天就在公司页标签行和
+   首页免责条里挂一枚琥珀色警示——数据还在，但要让人知道它不是新的。 */
+function dataAgeDays() {
+  const d = indexData?.generatedAt;
+  if (!d) return null;
+  const ts = Date.parse(d);
+  if (Number.isNaN(ts)) return null;
+  return Math.max(0, Math.floor((Date.now() - ts) / 86400000));
+}
+function staleNoteHTML() {
+  const n = dataAgeDays();
+  if (n == null || n <= 10) return "";
+  return `<span class="tag tag-stale">${esc(t("stale.days", "已过期 {n} 天").replace("{n}", n))}</span>`;
+}
 // 把完整行情挂到公司页数据上。只有锚点渲染行情指标，上下游卡片不显示数字，
 // 所以它们不用拉。
 function mergeFundamentals(data, quote) {
@@ -412,7 +660,16 @@ function parseRoute() {
   if (h.startsWith("m/")) return { name: "industryMap", industry: decodeURIComponent(h.slice(2)) };
   // 设备档案：#/e/{id}（产业链档案的第三级）
   if (h.startsWith("e/")) return { name: "equipment", id: decodeURIComponent(h.slice(2)) };
+  // 公司对比：#/x/300750,002594（2–4 家）
+  if (h.startsWith("x/")) {
+    return {
+      name: "compare",
+      tickers: decodeURIComponent(h.slice(2)).split(/[,，]/).map((s) => s.trim().toUpperCase()).filter(Boolean),
+    };
+  }
   if (h === "vision") return { name: "vision" };
+  // 锂电产业链看板：#/li
+  if (h === "li") return { name: "lithium" };
   // "atlas" 是"全景图谱"的旧名字，留着旧链接不失效
   if (h === "worldmap" || h === "atlas") return { name: "worldmap" };
   return { name: "home" };
@@ -439,6 +696,8 @@ async function route() {
 
   if (r.name === "vision") {
     await renderVision();
+  } else if (r.name === "lithium") {
+    await renderLithiumPage();
   } else if (r.name === "worldmap") {
     await renderWorldMap();
   } else if (r.name === "industry") {
@@ -447,6 +706,8 @@ async function route() {
     await renderIndustryRingPage(r.industry);
   } else if (r.name === "equipment") {
     await renderEquipmentPage(r.id);
+  } else if (r.name === "compare") {
+    await renderCompare(r.tickers);
   } else if (r.name === "company") {
     app.innerHTML = "";
     startLoading();
@@ -455,11 +716,14 @@ async function route() {
       // 只加载这三个：4,071 家里只有 151 家有独立的价值链卡片，
       // 其余公司的信息全部从 index.json（身份/行业）+ graph.json（所属环节/同行）推导
       const info = (indexData?.companies || []).find((c) => c.ticker === ticker);
-      const [, , quote, chain, profile] = await Promise.all([
+      const [, , quote, chain, profile, history, indTrends] = await Promise.all([
         loadGraph(), loadChainSteps(),
         loadQuote(ticker),          // 完整财务指标，一家一份，按需
         loadChainData(),
         loadProfile(ticker),        // 公司介绍，一家一份，按需
+        loadHistory(ticker),        // 近一年收盘价，可能根本没有文件
+        // 行业/环节指数（走势图三线对照用；行业可能不在 index.json 就跳过）
+        info?.industry ? loadIndustryTrends(info.industry) : Promise.resolve(null),
       ]);
       let card = null;
       if (info && info.curated) {
@@ -481,6 +745,8 @@ async function route() {
       };
       mergeFundamentals(data, quote);
       data.profile = profile;   // 公司介绍（可能为 null，渲染层兜底）
+      data.history = history;   // 近一年收盘价（可能为 null，渲染层跳过整块）
+      data.indTrends = indTrends;   // 行业/环节指数（可能为 null，走势图降级为公司单线）
       if (parseRoute().name !== "company") return;  // 加载途中用户跳走了，别再渲染
       renderCompany(data);
     } catch {
@@ -667,7 +933,7 @@ function heroHTML() {
         <span class="hero-stat"><b data-count="${tot.boards}">${esc(fmtInt(tot.boards))}</b><span>${esc(t("stat.boards", "个产业链环节"))}</span></span>
         <span class="hero-stat"><b data-count="${tot.edges}">${esc(fmtInt(tot.edges))}</b><span>${esc(t("stat.edges", "条公司—环节关联"))}</span></span>
       </div>
-      <p class="hero-note">${noteHTML()}</p>
+      <p class="hero-note">${noteHTML()} ${staleNoteHTML()}</p>
     </section>
     <div class="hero-bar" id="home-hero-bar" hidden>
       <span class="hero-bar-title">${esc(t("home.title", ""))}</span>
@@ -1037,13 +1303,148 @@ function searchResultsHTML(term) {
     </section>`;
 }
 
+/* 首页全市场走势图：data/trends/index.json 的 market 序列（基期=100）。
+   数据没加载到（404/断网/空序列）就整块不渲染，环图照常。 */
+/* 行业一年涨跌榜：trendsIndex.industries（行业名 → 基期 100 的指数序列），
+   按（末日值 − 100）降序。过渡期 industries 可能不足 24 个行业——只画有的。
+   条形以 0 为中轴向左右伸展，宽度 = |涨跌| / 最大绝对值 × 半个轨槽。 */
+function marketRankHTML() {
+  const inds = trendsIndex?.industries;
+  if (!inds || typeof inds !== "object") return "";
+  const rows = Object.entries(inds)
+    .map(([name, vals]) => {
+      const v = Array.isArray(vals) && vals.length ? Number(vals[vals.length - 1]) : NaN;
+      return Number.isFinite(v) ? { name, pct: v - 100 } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.pct - a.pct || a.name.localeCompare(b.name, "zh"));
+  if (!rows.length) return "";
+  const maxAbs = Math.max(...rows.map((r) => Math.abs(r.pct))) || 1;
+  const items = rows.map((r) => {
+    const w = (Math.abs(r.pct) / maxAbs) * 50;
+    const cls = changeClass(r.pct);
+    const pos = r.pct >= 0;
+    return `<a class="trank-row irank-row" href="#/i/${encodeURIComponent(r.name)}">
+      <span class="trank-name">${esc(t("sector." + r.name, r.name))}</span>
+      <span class="trank-track"><i class="trank-fill ${cls}" style="${pos ? "left" : "right"}:50%;width:${w.toFixed(2)}%"></i></span>
+      <b class="trank-pct ${cls}">${esc(fmtPct(r.pct))}</b>
+    </a>`;
+  }).join("");
+  return `<div class="trank">
+      <h3 class="trank-title">${esc(t("trend.rankTitle", "行业一年涨跌榜"))}</h3>
+      <div class="trank-grid">${items}</div>
+    </div>`;
+}
+
+function marketTrendHTML() {
+  const d = trendsIndex;
+  if (!d) return "";
+  return trendChartHTML({
+    series: [{ name: t("trend.marketLine", "全市场指数"), values: d.market, color: cssVar("--primary", "#E8A33D"), width: 2.2 }],
+    dates: d.dates,
+    title: t("trend.marketTitle", "市场趋势"),
+    sub: t("trend.sub", "指数化 · 基期 = 100 · {n} 个交易日").replace("{n}", fmtInt(Math.min(d.dates.length, d.market.length))),
+    foot: marketRankHTML() + boardTempHTML(),
+  });
+}
+
+/* 环节温度榜：trendsIndex.boards（管线产出，{name,n,y,m,w}，已按 m 降序）。
+   近一周 w / 近一月 m 两个 tab，各画最热 5 + 最冷 5；两个面板都预渲染，
+   tab 切换只是 hidden/aria-pressed 翻转，纯前端。
+   boards 键缺失（过渡期文件）→ 整块不渲染。
+   行点击 → 该环节成员最多的行业页（环节没有独立页；行业页环节筛选不走 URL，就只进行业页）。 */
+const boardModalIndCache = new Map();
+function boardModalIndustry(name) {
+  if (boardModalIndCache.has(name)) return boardModalIndCache.get(name);
+  let ind = null;
+  const bi = graphData?.boardList?.indexOf(name);
+  if (bi != null && bi >= 0) {
+    const indOf = new Map((indexData?.companies || []).map((c) => [c.ticker, c.industry]));
+    const freq = new Map();
+    for (const [tk, bis] of Object.entries(graphData.boardIdxOf || {})) {
+      if (!bis.includes(bi)) continue;
+      const v = indOf.get(tk);
+      if (v) freq.set(v, (freq.get(v) || 0) + 1);
+    }
+    ind = [...freq.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] || null;
+  }
+  boardModalIndCache.set(name, ind);
+  return ind;
+}
+
+function boardTempHTML() {
+  const boards = trendsIndex?.boards;
+  if (!Array.isArray(boards) || !boards.length) return "";
+  const valid = boards.filter((b) => b && typeof b.name === "string"
+    && Number.isFinite(Number(b.w)) && Number.isFinite(Number(b.m)));
+  if (valid.length < 2) return "";
+
+  const pane = (key) => {
+    const sorted = [...valid].sort((a, b) => Number(b[key]) - Number(a[key]));
+    const hot = sorted.slice(0, 5);
+    const cold = sorted.slice(-5).filter((b) => !hot.includes(b)).reverse();   // 最冷的在最上
+    const maxAbs = Math.max(...[...hot, ...cold].map((b) => Math.abs(Number(b[key])))) || 1;
+    const row = (b) => {
+      const v = Number(b[key]);
+      const cls = changeClass(v);
+      const w = (Math.abs(v) / maxAbs) * 50;
+      const ind = boardModalIndustry(b.name);
+      const inner = `<span class="trank-name">${esc(b.name)}</span>`
+        + `<span class="btemp-n">${esc(fmtInt(b.n))} ${esc(t("ind.unitCompanies", "家"))}</span>`
+        + `<span class="trank-track"><i class="trank-fill ${cls}" style="${v >= 0 ? "left" : "right"}:50%;width:${w.toFixed(2)}%"></i></span>`
+        + `<b class="trank-pct ${cls}">${esc(fmtPct(v))}</b>`;
+      return ind
+        ? `<a class="trank-row btemp-row" href="#/i/${encodeURIComponent(ind)}">${inner}</a>`
+        : `<div class="trank-row btemp-row">${inner}</div>`;
+    };
+    return `<div class="btemp-cols">
+      <div class="btemp-col"><p class="btemp-col-title">${esc(t("trend.btempHot", "最热"))}</p>${hot.map(row).join("")}</div>
+      <div class="btemp-col"><p class="btemp-col-title">${esc(t("trend.btempCold", "最冷"))}</p>${cold.map(row).join("")}</div>
+    </div>`;
+  };
+
+  return `<div class="trank btemp">
+    <div class="btemp-head">
+      <h3 class="trank-title">${esc(t("trend.btempTitle", "环节温度"))}</h3>
+      <span class="btemp-tabs">
+        <button class="chip" type="button" data-btemp="w" aria-pressed="true">${esc(t("trend.btempW", "近一周"))}</button>
+        <button class="chip" type="button" data-btemp="m" aria-pressed="false">${esc(t("trend.btempM", "近一月"))}</button>
+      </span>
+    </div>
+    <div data-btemp-body="w">${pane("w")}</div>
+    <div data-btemp-body="m" hidden>${pane("m")}</div>
+  </div>`;
+}
+
+/* 首页的锂电看板入口：一行卡片式链接，风格沿用 chip/arr */
+function liEntryHTML() {
+  return `<section class="sec li-entry-sec">
+    <a class="li-entry" href="#/li">
+      <span class="li-entry-title">${esc(t("li.entryTitle", "锂电产业链看板"))}</span>
+      <span class="li-entry-sub">${esc(t("li.entrySub", "上游锂资源 → 中游主材与电芯 → 回收 · 环节指数与碳酸锂期货价格"))}</span>
+      <span class="arr" aria-hidden="true">→</span>
+    </a>
+  </section>`;
+}
+
 function homeBodyHTML() {
   const term = searchTerm.trim();
-  return term ? searchResultsHTML(term) : marketRingHTML();
+  return term ? searchResultsHTML(term) : marketTrendHTML() + liEntryHTML() + marketRingHTML();
 }
 
 // 首页正文渲染完之后要画环（canvas 必须先插进 DOM 才能量尺寸）
 function afterHomeBody() {
+  // 环节温度榜 tab：两个面板都已预渲染，只翻 hidden / aria-pressed
+  document.querySelector(".btemp-tabs")?.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-btemp]");
+    if (!b) return;
+    const key = b.dataset.btemp;
+    document.querySelectorAll(".btemp-tabs [data-btemp]").forEach((x) =>
+      x.setAttribute("aria-pressed", String(x === b)));
+    document.querySelectorAll("[data-btemp-body]").forEach((p) => {
+      p.hidden = p.dataset.btempBody !== key;
+    });
+  });
   const cv = document.getElementById("market-ring");
   if (!cv) return;
   // 大环扫入：从 12 点顺时针把各段依次"画"出来。悬停重画共享 cv._introT，
@@ -1107,7 +1508,7 @@ function indChainDist(ind) {
 function indFiltered(ind) {
   const low = indTerm.trim().toLowerCase();
   const byTicker = new Map((indexData?.companies || []).map((c) => [c.ticker, c]));
-  return indMembers(ind)
+  const list = indMembers(ind)
     .map((tk) => byTicker.get(tk))
     .filter(Boolean)
     .filter((c) => {
@@ -1116,6 +1517,26 @@ function indFiltered(ind) {
       if (!low) return true;
       return c.name.toLowerCase().includes(low) || c.ticker.toLowerCase().includes(low);
     });
+  // 排序只在"非默认"时动顺序；没有行情数字的公司一律沉底（跟哪家比都排后面）
+  if (indSort !== "default") {
+    const q = indexData?.quotes || {};
+    const valOf = (c) => {
+      const f = q[c.ticker];
+      if (!f) return null;
+      if (indSort === "chg") return typeof f.changePercent === "number" ? f.changePercent : null;
+      if (indSort === "cap") return typeof f.marketCap === "number" ? f.marketCap : null;
+      return null;
+    };
+    list.sort((a, b) => {
+      if (indSort === "name") return a.name.localeCompare(b.name, "zh");
+      const va = valOf(a), vb = valOf(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return vb - va;
+    });
+  }
+  return list;
 }
 
 function indListHTML(ind) {
@@ -1153,6 +1574,44 @@ function refreshIndList() {
     b.setAttribute("aria-pressed", String(
       b.dataset.market === "" ? indSelMarket === null : b.dataset.market === indSelMarket));
   });
+  document.querySelectorAll("#ind-toolbar [data-sort]").forEach((b) => {
+    b.setAttribute("aria-pressed", String(b.dataset.sort === indSort));
+  });
+}
+
+// 触发浏览器下载（CSV / PNG 共用）
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+/* 导出当前行业列表为 CSV：导出的是"当前筛选 + 排序"的完整结果，
+   不受"再看 N 家"分页限制。开头写 BOM，Excel 才能按 UTF-8 打开中文不乱码。 */
+function exportIndCsv(ind) {
+  const list = indFiltered(ind);
+  const q = indexData?.quotes || {};
+  const cell = (v) => {
+    const s = String(v ?? "");
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const header = ["代码", "名称", "板块", "交易所", "最新价", "涨跌幅%", "总市值(亿)", "产业链环节数"];
+  const rows = list.map((c) => {
+    const f = q[c.ticker] || {};
+    return [
+      c.ticker, c.name, c.board || "", c.exchange || "",
+      f.price ?? "", f.changePercent ?? "", f.marketCap ?? "", c.boardCount ?? "",
+    ].map(cell).join(",");
+  });
+  const csv = "\uFEFF" + header.map(cell).join(",") + "\r\n" + rows.join("\r\n") + "\r\n";
+  const today = new Date();
+  const ds = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), `${ind}-公司列表-${ds}.csv`);
 }
 
 // ── 产业链档案（行业/公司/设备）共用渲染件 ─────────────────────────
@@ -1213,10 +1672,42 @@ function chainDeviceChips(refs) {
   }).join("");
 }
 
+/* 行业页走势图：行业指数（主线，加粗主色）+ 成员数最多的前 8 条环节指数
+   （细线，行业色板 --ind-1…--ind-8，与环节芯片同名同序，支持芯片联动）。
+   环节排序跟「产业链环节分布」的频次序走，图表和芯片说的是同一套次序。
+   数据缺失 / 行业序列为空（日线覆盖不足）→ 整块不渲染。 */
+function indTrendHTML(ind, trend, dist) {
+  if (!trend || !Array.isArray(trend.industry) || !trend.industry.length) return "";
+  const segs = trend.segments && typeof trend.segments === "object" ? Object.keys(trend.segments) : [];
+  const order = new Map((dist || []).map((d, i) => [d.name, i]));
+  segs.sort((a, b) => (order.get(a) ?? 1e9) - (order.get(b) ?? 1e9));
+  const top = segs.slice(0, 8);
+  const series = [{ name: t("sector." + ind, ind), values: trend.industry, color: cssVar("--primary", "#E8A33D"), width: 2.2 }]
+    .concat(top.map((name, i) => ({
+      name, seg: name, values: trend.segments[name],
+      color: cssVar(`--ind-${(i % 11) + 1}`, "#759EB4"), width: 1.2,
+    })));
+  const days = Math.min(trend.dates.length, trend.industry.length);
+  return trendChartHTML({
+    series,
+    dates: trend.dates,
+    title: t("trend.indTitle", "行业与环节走势"),
+    sub: top.length
+      ? t("trend.subSegs", "行业指数 + 成员数前 {m} 个环节 · 基期 = 100 · {n} 个交易日")
+          .replace("{m}", top.length).replace("{n}", fmtInt(days))
+      : t("trend.sub", "指数化 · 基期 = 100 · {n} 个交易日").replace("{n}", fmtInt(days)),
+  });
+}
+
 async function renderIndustryPage(ind) {
   app.innerHTML = "";
   startLoading();
-  const [, g, chain] = await Promise.all([loadGraph(), loadChainData()]);
+  // 走势数据单独挂 indTrends，不占解构位。
+  let indTrends = null;
+  const [g, chain] = await Promise.all([
+    loadGraph(), loadChainData(),
+    loadIndustryTrends(ind).then((d) => { indTrends = d; }),
+  ]);
   if (parseRoute().name !== "industry") return;
   stopLoading();
   if (!g || !g.industries[ind]) {
@@ -1231,6 +1722,7 @@ async function renderIndustryPage(ind) {
     indTerm = "";
     indSelChain = null;
     indSelMarket = null;
+    indSort = "default";
     indLimit = IND_STEP;
   }
 
@@ -1245,6 +1737,12 @@ async function renderIndustryPage(ind) {
   const marketChips = [`<button class="chip" type="button" data-market="" aria-pressed="${indSelMarket === null}">${esc(t("filter.boardAll", "全部板块"))}</button>`]
     .concat(markets.map((b) => `<button class="chip" type="button" data-market="${esc(b)}" aria-pressed="${indSelMarket === b}">${esc(t("board." + b, b))}</button>`))
     .join("");
+  const sortChips = [
+    ["default", t("ind.sort.default", "默认")],
+    ["chg", t("ind.sort.chg", "涨幅")],
+    ["cap", t("ind.sort.cap", "市值")],
+    ["name", t("ind.sort.name", "名称")],
+  ].map(([v, label]) => `<button class="chip" type="button" data-sort="${v}" aria-pressed="${indSort === v}">${esc(label)}</button>`).join("");
 
   app.innerHTML = `
     <div class="crumb"><a href="#/"><span class="arr" aria-hidden="true">←</span> ${esc(t("crumb.home", "全部行业"))}</a></div>
@@ -1260,13 +1758,18 @@ async function renderIndustryPage(ind) {
       <p class="ind-map-link"><a class="chip" href="#/m/${encodeURIComponent(ind)}">${esc(t("ind.ringLink", "看这个行业的大环图 →"))}</a></p>
     </header>
 
-    ${chain && chain.industries && chain.industries[ind] ? chainSectionHTML(
-      t("chain.industryTitle", "行业档案"),
-      chain.industries[ind],
-      chainField(t("chain.fIntro", "行业简介"), chainTextOrPending(chain.industries[ind].intro))
-      + chainField(t("chain.fPosition", "产业链位置"), chainTextOrPending(chain.industries[ind].chain_position))
-      + chainField(t("chain.fOutput", "行业产值 / 市场规模"), chainOutputHTML(chain.industries[ind].output_value))
-    ) : ""}
+    ${(() => {
+      // 行业档案：只有存在真实内容的字段才展示；全为占位（待接入）时整个区块不渲染
+      const prof = chain && chain.industries ? chain.industries[ind] : null;
+      if (!prof) return "";
+      const fields
+        = ((prof.intro || "").trim() ? chainField(t("chain.fIntro", "行业简介"), esc(prof.intro)) : "")
+        + ((prof.chain_position || "").trim() ? chainField(t("chain.fPosition", "产业链位置"), esc(prof.chain_position)) : "")
+        + (ovReady(prof.output_value) ? chainField(t("chain.fOutput", "行业产值 / 市场规模"), chainOutputHTML(prof.output_value)) : "");
+      return fields ? chainSectionHTML(t("chain.industryTitle", "行业档案"), prof, fields) : "";
+    })()}
+
+    ${indTrendHTML(ind, indTrends, dist)}
 
     <section class="sec">
       <div class="sec-head">
@@ -1290,6 +1793,10 @@ async function renderIndustryPage(ind) {
                placeholder="${esc(t("ind.searchPh", "在这个行业里搜公司"))}" value="${esc(indTerm)}" />
         <span class="toolbar-sep" aria-hidden="true"></span>
         <span class="sec-sub">${esc(t("filter.board", "板块"))}</span>${marketChips}
+        <span class="toolbar-sep" aria-hidden="true"></span>
+        <span class="sec-sub">${esc(t("ind.sortLabel", "排序"))}</span>${sortChips}
+        <span class="toolbar-sep" aria-hidden="true"></span>
+        <button class="chip" id="ind-csv" type="button">${esc(t("ind.exportCsv", "导出 CSV"))}</button>
       </div>
       <div id="ind-list">${indListHTML(ind)}</div>
     </section>`;
@@ -1302,8 +1809,16 @@ async function renderIndustryPage(ind) {
     indSelChain = btn.dataset.chain === "" ? null : btn.dataset.chain;
     indLimit = IND_STEP;
     refreshIndList();
+    syncIndTrendSel();
   });
   document.getElementById("ind-toolbar")?.addEventListener("click", (e) => {
+    if (e.target.closest("#ind-csv")) { exportIndCsv(ind); return; }
+    const sortBtn = e.target.closest("[data-sort]");
+    if (sortBtn) {
+      indSort = sortBtn.dataset.sort;
+      refreshIndList();          // 排序不改集合，已显示的条数保持不动
+      return;
+    }
     const btn = e.target.closest("[data-market]");
     if (!btn) return;
     indSelMarket = btn.dataset.market === "" ? null : btn.dataset.market;
@@ -1506,52 +2021,40 @@ function clusterHTML(c) {
     </div>`;
 }
 
-function clusterCol(clusters, dir, tier) {
-  const cs = orderedClusters(clusters, dir, tier);
-  if (!cs.length) return "";
-  const tierKey = dir === "upstream"
-    ? (tier === 1 ? "company.tierUp1" : "company.tierUp2")
-    : (tier === 1 ? "company.tierDown1" : "company.tierDown2");
-  const label = t(tierKey, `${dir === "upstream" ? "上游" : "下游"} · Tier ${tier}`);
-  return `<div class="vcm-col" data-dir="${dir}" data-tier="${tier}">
-      <div class="tier-label">${esc(label)}</div>${cs.map(clusterHTML).join("")}</div>`;
+/* 价值链地图的数据模型：列 / 分组 / 卡片的纯数据，DOM 渲染与 PNG 导出共用。
+   列顺序：上游二级 → 上游一级 → 锚点 → 下游一级 →（无下游时的终端占位）→ 下游二级 */
+function vcmModel(data) {
+  const nodes = data.nodes || [];
+  const clusters = buildClusters(nodes);
+  const hasDown = nodes.some((n) => n.relation === "downstream");
+  const colDef = (dir, tier) => {
+    const cs = orderedClusters(clusters, dir, tier);
+    if (!cs.length) return null;
+    const tierKey = dir === "upstream"
+      ? (tier === 1 ? "company.tierUp1" : "company.tierUp2")
+      : (tier === 1 ? "company.tierDown1" : "company.tierDown2");
+    return { dir, tier, label: t(tierKey, `${dir === "upstream" ? "上游" : "下游"} · Tier ${tier}`), clusters: cs };
+  };
+  const cols = [];
+  const up2 = colDef("upstream", 2); if (up2) cols.push(up2);
+  const up1 = colDef("upstream", 1); if (up1) cols.push(up1);
+  cols.push({ dir: "anchor", tier: 0, label: t("company.anchor", "锚点"), anchor: data.anchor });
+  const dn1 = colDef("downstream", 1); if (dn1) cols.push(dn1);
+  // 下游为空时放一个"终端市场"占位，说明这条链的终点在覆盖范围之外
+  if (!hasDown) {
+    cols.push({ dir: "downstream", tier: 1, label: t("company.tierDown1", "下游 · 一级"), terminal: true, clusters: [] });
+  }
+  const dn2 = colDef("downstream", 2); if (dn2) cols.push(dn2);
+  return { anchor: data.anchor, cols };
 }
 
 function mapHTML(data) {
-  const nodes = data.nodes || [];
   const a = data.anchor;
-  const clusters = buildClusters(nodes);
-  const hasDown = nodes.some((n) => n.relation === "downstream");
-  // 下游为空时放一个"终端市场"占位，说明这条链的终点在覆盖范围之外
-  const terminal = hasDown ? "" : `
-      <div class="vcm-col" data-dir="downstream" data-tier="1">
-        <div class="tier-label">${esc(t("company.tierDown1", "下游 · 一级"))}</div>
-        <div class="vcm-cluster" style="background:${tintFor("downstream", 1)};border-color:var(--terminal)">
-          <div class="vcm-face">
-            <div class="vcm-card">
-              <div class="map-node map-terminal">
-                <span class="map-node-text">
-                  <span class="map-node-name">${esc(t("company.terminalName", "终端市场"))}</span>
-                  <span class="map-node-role">${esc(t("company.terminalRole", ""))}</span>
-                </span>
-              </div>
-              <div class="vcm-tip" role="tooltip"><span class="vcm-tip-rel">${esc(t("company.terminalHint", ""))}</span></div>
-            </div>
-          </div>
-        </div>
-      </div>`;
-
-  return `
-    <div class="map" id="vcm-map">
-      <div class="vcm-stage" id="vcm-stage">
-        <div class="vcm-bands" id="vcm-bands" aria-hidden="true"></div>
-        <div class="vcm-dividers" id="vcm-dividers" aria-hidden="true"></div>
-        <svg class="vcm-links" id="vcm-links" aria-hidden="true"></svg>
-        <div class="vcm-grid" id="vcm-grid">
-          ${clusterCol(clusters, "upstream", 2)}
-          ${clusterCol(clusters, "upstream", 1)}
-          <div class="vcm-col vcm-anchor-col">
-            <div class="tier-label">${esc(t("company.anchor", "锚点"))}</div>
+  const model = vcmModel(data);
+  const colHTML = (col) => {
+    if (col.dir === "anchor") {
+      return `<div class="vcm-col vcm-anchor-col">
+            <div class="tier-label">${esc(col.label)}</div>
             <div class="vcm-cluster vcm-anchor-cluster" data-key="__anchor__">
               <div class="vcm-face" style="padding:8px">
                 <div class="map-node map-anchor" data-id="__anchor__">
@@ -1562,10 +2065,38 @@ function mapHTML(data) {
                 </div>
               </div>
             </div>
-          </div>
-          ${clusterCol(clusters, "downstream", 1)}
-          ${terminal}
-          ${clusterCol(clusters, "downstream", 2)}
+          </div>`;
+    }
+    if (col.terminal) {
+      return `<div class="vcm-col" data-dir="downstream" data-tier="1">
+            <div class="tier-label">${esc(col.label)}</div>
+            <div class="vcm-cluster" style="background:${tintFor("downstream", 1)};border-color:var(--terminal)">
+              <div class="vcm-face">
+                <div class="vcm-card">
+                  <div class="map-node map-terminal">
+                    <span class="map-node-text">
+                      <span class="map-node-name">${esc(t("company.terminalName", "终端市场"))}</span>
+                      <span class="map-node-role">${esc(t("company.terminalRole", ""))}</span>
+                    </span>
+                  </div>
+                  <div class="vcm-tip" role="tooltip"><span class="vcm-tip-rel">${esc(t("company.terminalHint", ""))}</span></div>
+                </div>
+              </div>
+            </div>
+          </div>`;
+    }
+    return `<div class="vcm-col" data-dir="${col.dir}" data-tier="${col.tier}">
+            <div class="tier-label">${esc(col.label)}</div>${col.clusters.map(clusterHTML).join("")}</div>`;
+  };
+
+  return `
+    <div class="map" id="vcm-map">
+      <div class="vcm-stage" id="vcm-stage">
+        <div class="vcm-bands" id="vcm-bands" aria-hidden="true"></div>
+        <div class="vcm-dividers" id="vcm-dividers" aria-hidden="true"></div>
+        <svg class="vcm-links" id="vcm-links" aria-hidden="true"></svg>
+        <div class="vcm-grid" id="vcm-grid">
+          ${model.cols.map(colHTML).join("\n")}
         </div>
       </div>
     </div>`;
@@ -1724,6 +2255,159 @@ function drawMap() {
   fitMap();
 }
 
+/* 价值链地图导出 PNG：地图是 DOM+SVG，不能 toDataURL，所以用 vcmModel() 的纯数据
+   在离屏 Canvas 上重绘一份印刷版——米白纸底、2x 分辨率、五列圆角卡片 + 贝塞尔连线。
+   纸底色板是固定的（深色主题的浅字印在米纸上没法看）；
+   链方向色仍然走 cssVar，与页面上看到的是同一组。 */
+function exportVcmPNG(data) {
+  const model = vcmModel(data);
+  const S = 2;
+  const font = getComputedStyle(document.body).fontFamily;
+  const PAPER = "#F8F5EC", INK = "#232A35", FAINTC = "#6B7280", CARD = "#FFFFFF", LINE = "#D9D3C3";
+  const chainColor = (dir, tier) => cssVar(
+    dir === "upstream" ? (tier === 1 ? "--up1" : "--up2") : (tier === 1 ? "--dn1" : "--dn2"),
+    "#5B9BD5");
+
+  const colW = 230, colGap = 58;
+  const cardH = 46, cardGap = 6, clusterHeadH = 26, clusterPad = 8, clusterGap = 14;
+  const labelH = 30, padX = 28, padTop = 64, footH = 48;
+
+  // 先量每列的内容高度，取最高的当内容区高度
+  const colHeight = (col) => {
+    if (col.dir === "anchor") return labelH + 96;
+    if (col.terminal) return labelH + cardH;
+    return labelH + col.clusters.reduce((h, c) =>
+      h + clusterHeadH + c.members.length * (cardH + cardGap) + clusterPad * 2 + clusterGap, 0) - clusterGap;
+  };
+  const contentH = Math.max(...model.cols.map(colHeight));
+  const W = padX * 2 + model.cols.length * colW + (model.cols.length - 1) * colGap;
+  const H = padTop + contentH + footH;
+
+  const cv = document.createElement("canvas");
+  cv.width = Math.floor(W * S);
+  cv.height = Math.floor(H * S);
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(S, 0, 0, S, 0, 0);
+  ctx.fillStyle = PAPER;
+  ctx.fillRect(0, 0, W, H);
+
+  // 标题
+  ctx.fillStyle = INK;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `600 20px ${font}`;
+  ctx.fillText(`${model.anchor.name} ${model.anchor.ticker} · ${t("company.chainTitle", "价值链地图")}`, padX, 40);
+
+  const rr = (x, y, w, h, r) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  };
+  const drawCard = (x, y, w, name, sub, accent) => {
+    ctx.fillStyle = CARD; rr(x, y, w, cardH, 4); ctx.fill();
+    ctx.strokeStyle = LINE; ctx.lineWidth = 1; rr(x, y, w, cardH, 4); ctx.stroke();
+    if (accent) { ctx.fillStyle = accent; ctx.fillRect(x, y + 4, 3, cardH - 8); }
+    ctx.fillStyle = INK; ctx.font = `500 13px ${font}`; ctx.textAlign = "left";
+    ctx.fillText(name, x + 12, y + 19, w - 24);
+    ctx.fillStyle = FAINTC; ctx.font = `400 10.5px ${font}`;
+    ctx.fillText(sub || "", x + 12, y + 35, w - 24);
+  };
+
+  // 布局各列，同时记录连线锚点：一级分组 → 锚点；二级分组 → 它 via 指向的一级分组
+  const anchorEdge = { xL: 0, xR: 0, y: 0 };
+  const edges = [];   // { x, y, dir, tier, via, tickers }
+  let cx = padX;
+  for (const col of model.cols) {
+    const accent = col.dir === "anchor" ? cssVar("--primary", "#E8A33D") : chainColor(col.dir, col.tier);
+    ctx.fillStyle = FAINTC;
+    ctx.font = `500 10.5px ${font}`;
+    ctx.textAlign = "left";
+    ctx.fillText(col.label, cx, padTop + 12, colW);
+
+    if (col.dir === "anchor") {
+      const ay = padTop + labelH + Math.max(0, (contentH - labelH - 74) / 2);
+      ctx.fillStyle = CARD; rr(cx, ay, colW, 74, 4); ctx.fill();
+      ctx.strokeStyle = accent; ctx.lineWidth = 1.5; rr(cx, ay, colW, 74, 4); ctx.stroke();
+      ctx.fillStyle = INK; ctx.font = `600 16px ${font}`;
+      ctx.fillText(model.anchor.name, cx + 14, ay + 32, colW - 28);
+      ctx.fillStyle = FAINTC; ctx.font = `400 11px ${font}`;
+      const sector = model.anchor.sector || model.anchor.industry || "";
+      ctx.fillText(`${model.anchor.ticker} · ${t("sector." + sector, sector)}`, cx + 14, ay + 53, colW - 28);
+      anchorEdge.xL = cx; anchorEdge.xR = cx + colW; anchorEdge.y = ay + 37;
+    } else if (col.terminal) {
+      drawCard(cx, padTop + labelH, colW,
+        t("company.terminalName", "终端市场"), t("company.terminalRole", ""),
+        cssVar("--terminal", "#5E6B7C"));
+    } else {
+      let cy = padTop + labelH;
+      for (const c of col.clusters) {
+        const chH = clusterHeadH + c.members.length * (cardH + cardGap) + clusterPad * 2;
+        ctx.fillStyle = CARD; rr(cx, cy, colW, chH, 4); ctx.fill();
+        ctx.strokeStyle = LINE; ctx.lineWidth = 1; rr(cx, cy, colW, chH, 4); ctx.stroke();
+        ctx.fillStyle = accent; ctx.fillRect(cx, cy + 4, 3, chH - 8);
+        ctx.fillStyle = INK; ctx.font = `500 12.5px ${font}`;
+        ctx.fillText(`${c.group} (${c.members.length})`, cx + 12, cy + 17, colW - 24);
+        let my = cy + clusterHeadH + clusterPad;
+        for (const m of c.members) {
+          drawCard(cx + clusterPad, my, colW - clusterPad * 2,
+            m.name, `${m.role} · ${m.ticker}`, null);
+          my += cardH + cardGap;
+        }
+        edges.push({
+          x: col.dir === "upstream" ? cx + colW : cx,
+          y: cy + chH / 2,
+          dir: col.dir, tier: col.tier,
+          via: c.members[0] ? c.members[0].via : null,
+          tickers: new Set(c.members.map((m) => m.ticker)),
+        });
+        cy += chH + clusterGap;
+      }
+    }
+    cx += colW + colGap;
+  }
+
+  // 贝塞尔连线：与页面上同一约定，控制点收在列间空隙里
+  for (const e of edges) {
+    let x1 = e.x, y1 = e.y, x2, y2;
+    if (e.tier === 1) {
+      x2 = e.dir === "upstream" ? anchorEdge.xL : anchorEdge.xR;
+      y2 = anchorEdge.y;
+    } else {
+      const parent = edges.find((p) => p.tier === 1 && p.dir === e.dir && e.via && p.tickers.has(e.via));
+      if (!parent) continue;
+      // 上游侧连一级分组的左缘（parent.x 记的是右缘），下游侧连一级分组的右缘
+      x2 = e.dir === "upstream" ? parent.x - colW : parent.x + colW;
+      y2 = parent.y;
+    }
+    const dx = Math.max(6, Math.min(40, Math.abs(x2 - x1) * 0.4));
+    const sign = x2 >= x1 ? 1 : -1;
+    ctx.strokeStyle = chainColor(e.dir, e.tier);
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.bezierCurveTo(x1 + dx * sign, y1, x2 - dx * sign, y2, x2, y2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // 底部署名行
+  ctx.fillStyle = FAINTC;
+  ctx.font = `400 11px ${font}`;
+  ctx.textAlign = "left";
+  ctx.fillText(t("vcm.exportFoot", "链谱 ChainAtlas · 数据截至 {d} · 上下游为推断示意")
+    .replace("{d}", indexData?.generatedAt || "—"), padX, H - 18);
+
+  cv.toBlob((blob) => {
+    if (blob) downloadBlob(blob, `${model.anchor.name}-${t("company.chainTitle", "价值链地图")}.png`);
+  }, "image/png");
+}
+
 // 公司介绍块：主营业务 + 主营构成（按产品/按地区双表）+ 工商信息 + 经营范围（折叠）。
 // 数据来自 data/p/{代码}.json（同花顺主营业务 + 巨潮公司概况 + 东财主营构成），
 // 抓取脚本 pipeline/fetch_profiles.py。没有数据就不渲染这个块。
@@ -1783,6 +2467,7 @@ function curatedMapSection(data) {
         <span class="sec-sub">${esc(t("company.curatedSub", "手工梳理 · 节点关系经人工整理"))}</span>
         <span class="sec-rule"></span>
         <button class="chip" id="map-zoom" type="button" aria-pressed="${mapZoom === "fit"}">${esc(mapZoom === "fit" ? t("company.zoomFit", "适应宽度") : t("company.zoomFull", "原始尺寸"))}</button>
+        <button class="chip" id="vcm-export" type="button">${esc(t("vcm.exportPng", "导出 PNG"))}</button>
       </div>
       <p class="chain-caveat">${esc(t("company.curatedCaveat", "上下游节点与分工来自人工整理的公开资料档案；细节请以公司官方披露为准。"))}</p>
       ${mapHTML(data)}
@@ -1848,6 +2533,382 @@ function posMapHTML(a) {
     </section>`;
 }
 
+/* 近一年走势图（公司页，行情指标区之后）：纯 SVG，viewBox 定死、宽 100% 自适应。
+   数据是 data/h/{代码}.json 的前复权日收盘价（升序）。文件没有 / 点太少就不渲染整块。
+   颜色全部运行时取 cssVar：区间上涨用 --rise、下跌用 --fall（涨红跌绿）。 */
+function histHTML(hist, opts = {}) {
+  const pts = hist && Array.isArray(hist.points) ? hist.points : [];
+  if (pts.length < 20) return "";
+  const title = opts.title || t("hist.title", "近一年走势");
+  const sub = opts.sub || t("hist.sub", "前复权收盘价 · {n} 个交易日").replace("{n}", fmtInt(pts.length));
+  const W = 720, H = 180, padL = 8, padR = 10, padT = 24, padB = 20;
+  const closes = pts.map((p) => p[1]);
+  const first = closes[0], last = closes[closes.length - 1];
+  let min = Infinity, max = -Infinity, minI = 0, maxI = 0;
+  closes.forEach((v, i) => {
+    if (v < min) { min = v; minI = i; }
+    if (v > max) { max = v; maxI = i; }
+  });
+  const span = max - min || 1;
+  const x = (i) => padL + (i / (closes.length - 1)) * (W - padL - padR);
+  const y = (v) => padT + (1 - (v - min) / span) * (H - padT - padB);
+  const up = last >= first;
+  const line = cssVar(up ? "--rise" : "--fall", up ? "#F6465D" : "#2FB67C");
+  const FAINT = cssVar("--text-faint", "#5E6B7C");
+  const gid = "hist-grad";
+
+  let d = "";
+  closes.forEach((v, i) => { d += `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`; });
+  const area = `${d}L${x(closes.length - 1).toFixed(1)} ${H - padB}L${x(0).toFixed(1)} ${H - padB}Z`;
+
+  // 最低/最高标注：值 + 日期（MM-DD），贴边的往回收一点免得被裁掉
+  const labelFor = (i, v, isMax) => {
+    const lx = clamp(x(i), 46, W - 46);
+    const ly = isMax ? y(v) - 10 : y(v) + 17;
+    const key = isMax ? "hist.high" : "hist.low";
+    const txt = `${t(key, isMax ? "最高" : "最低")} ${fmtNum(v)} · ${String(pts[i][0]).slice(5)}`;
+    return `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" class="hist-lbl">${esc(txt)}</text>`;
+  };
+
+  const pct = first ? ((last - first) / first) * 100 : null;
+  return `
+    <section class="sec hist">
+      <div class="sec-head">
+        <h2 class="sec-title">${esc(title)}</h2>
+        <span class="sec-sub">${esc(sub)}</span>
+        <span class="sec-rule"></span>
+        <span class="hist-chg ${changeClass(pct)}">${esc(fmtPct(pct))}</span>
+      </div>
+      <svg class="hist-svg" viewBox="0 0 ${W} ${H}" role="img"
+           aria-label="${esc(title)} ${esc(fmtPct(pct))}">
+        <defs>
+          <linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="${line}" stop-opacity="0.28" />
+            <stop offset="1" stop-color="${line}" stop-opacity="0.02" />
+          </linearGradient>
+        </defs>
+        <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}"
+              stroke="${FAINT}" stroke-opacity="0.35" stroke-width="1" />
+        <path d="${area}" fill="url(#${gid})" />
+        <path d="${d}" fill="none" stroke="${line}" stroke-width="1.6"
+              stroke-linejoin="round" stroke-linecap="round" />
+        ${labelFor(maxI, max, true)}
+        ${labelFor(minI, min, false)}
+        <circle cx="${x(closes.length - 1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="3" fill="${line}" />
+      </svg>
+    </section>`;
+}
+
+/* 指数走势图（首页全市场 / 行业页行业+环节）：histHTML 的多序列版。
+   与单线的差别：不画渐变面积（多条线会糊在一起）、第一条为主线（加粗、主色）、
+   细分线用行业色板、画 y=100 虚线基线——数据本身就是基期 100 的指数，
+   基线是读图锚点，所以算值域时把 100 包进去，保证基线一定落在图内。
+   series: [{ name, values, color, width, seg? }]；seg 是环节名，供环节芯片联动。
+   数据守卫生：序列与日期轴取公共长度、非有限值断笔跳过、span 兜底 1。
+   foot 是插在图例行之后、区块收尾前的附加内容（首页用来放行业涨跌榜）。 */
+function trendChartHTML({ series, dates, title, sub, foot }) {
+  const rows = (series || []).filter((s) => Array.isArray(s.values) && s.values.length);
+  const n = Math.min(Array.isArray(dates) ? dates.length : 0, ...rows.map((s) => s.values.length));
+  if (!rows.length || n < 20) return "";
+  const W = 720, H = 180, padL = 8, padR = 10, padT = 22, padB = 24;
+  let min = 100, max = 100;
+  for (const s of rows) {
+    for (let i = 0; i < n; i++) {
+      const v = Number(s.values[i]);
+      if (!Number.isFinite(v)) continue;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+  }
+  const span = max - min || 1;
+  const x = (i) => padL + (i / (n - 1)) * (W - padL - padR);
+  const y = (v) => padT + (1 - (v - min) / span) * (H - padT - padB);
+  const FAINT = cssVar("--text-faint", "#5E6B7C");
+
+  const pathFor = (s) => {
+    let d = "", pen = false;
+    for (let i = 0; i < n; i++) {
+      const v = Number(s.values[i]);
+      if (!Number.isFinite(v)) { pen = false; continue; }
+      d += `${pen ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`;
+      pen = true;
+    }
+    return d;
+  };
+
+  const main = rows[0];
+  const first = Number(main.values[0]), last = Number(main.values[n - 1]);
+  const pct = first ? ((last - first) / first) * 100 : null;
+
+  const paths = rows.map((s, i) =>
+    `<path d="${pathFor(s)}" fill="none" stroke="${s.color}" stroke-width="${s.width || 1.2}"
+           stroke-linejoin="round" stroke-linecap="round"${i ? ` data-seg="${esc(s.seg ?? s.name)}"` : ' data-main="1"'} />`
+  ).join("\n        ");
+
+  // 值域 / 日期标注：右上最高、右下最低，左下首日、右下末日（MM-DD）
+  const lblMax = `<text x="${W - padR}" y="11" text-anchor="end" class="trend-lbl">${esc(fmtNum(max))}</text>`;
+  const lblMin = `<text x="${W - padR}" y="${H - padB - 7}" text-anchor="end" class="trend-lbl">${esc(fmtNum(min))}</text>`;
+  const lblD0 = `<text x="${padL}" y="${H - 6}" text-anchor="start" class="trend-lbl">${esc(String(dates[0]).slice(5))}</text>`;
+  const lblD1 = `<text x="${W - padR}" y="${H - 6}" text-anchor="end" class="trend-lbl">${esc(String(dates[n - 1]).slice(5))}</text>`;
+  const baseY = y(100);
+  const baseline = `<line x1="${padL}" y1="${baseY.toFixed(1)}" x2="${W - padR}" y2="${baseY.toFixed(1)}"
+        stroke="${FAINT}" stroke-opacity="0.55" stroke-width="1" stroke-dasharray="4 4" class="trend-base" />
+        <text x="${padL + 2}" y="${(baseY - 4).toFixed(1)}" text-anchor="start" class="trend-lbl">100</text>`;
+
+  const legend = rows.length > 1 ? `<div class="trend-legend">${rows.map((s, i) =>
+    `<span${i ? ` data-seg="${esc(s.seg ?? s.name)}"` : ""}><i style="background:${s.color}"></i>${esc(s.name)}`
+    + `${s.pct != null ? ` <em class="${changeClass(s.pct)}">${esc(fmtPct(s.pct))}</em>` : ""}</span>`
+  ).join("")}</div>` : "";
+
+  return `
+    <section class="sec trend">
+      <div class="sec-head">
+        <h2 class="sec-title">${esc(title)}</h2>
+        <span class="sec-sub">${esc(sub)}</span>
+        <span class="sec-rule"></span>
+        <span class="hist-chg ${changeClass(pct)}">${esc(fmtPct(pct))}</span>
+      </div>
+      <svg class="trend-svg" viewBox="0 0 ${W} ${H}" role="img"
+           aria-label="${esc(title)} ${esc(fmtPct(pct))}">
+        <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}"
+              stroke="${FAINT}" stroke-opacity="0.35" stroke-width="1" />
+        ${baseline}
+        ${paths}
+        ${Number.isFinite(last) ? `<circle cx="${x(n - 1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="3" fill="${main.color}" />` : ""}
+        ${lblMax}
+        ${lblMin}
+        ${lblD0}
+        ${lblD1}
+      </svg>
+      ${legend}
+      ${foot || ""}
+    </section>`;
+}
+
+/* 环节芯片 → 行业走势图联动：选中环节时对应细分线加粗、其余细分线压暗，
+   图例同步明暗；选「全部环节」时全部复原。主线（行业指数）始终作参照不动。
+   没有走势图的行业页（数据缺失）这里就是空查询，天然无操作。 */
+function syncIndTrendSel() {
+  document.querySelectorAll(".trend-svg path[data-seg]").forEach((p) => {
+    const on = !indSelChain || p.dataset.seg === indSelChain;
+    p.style.opacity = on ? "1" : "0.15";
+    p.style.strokeWidth = p.dataset.seg === indSelChain ? "2.4" : "";
+  });
+  document.querySelectorAll(".trend-legend [data-seg]").forEach((el) => {
+    el.style.opacity = !indSelChain || el.dataset.seg === indSelChain ? "1" : "0.35";
+  });
+}
+
+/* 公司页走势图：公司 vs 行业 vs 环节 三线对照。
+   公司收盘价（前复权）映射到行业趋势文件的公共日期轴，三条序列统一以
+   第一个共同交易日 = 100 归一（行业/环节指数因此也会重定基，不再恰好在
+   dates[0] = 100——只有这样三条线才同尺度可比）。
+   环节线候选 = 公司所属环节（graph 的 boardIdxOf）∩ trends 文件 segments 键，
+   按该行业内成员数排序，默认第一个；一行小 chips 切换，只重绘本区块。
+   降级：公司 h 文件缺失/点太少 → ""（整块不出现，现状）；
+        行业 trends 缺失或行业序列为空 → 回退 histHTML 单线（现状样式）；
+        无匹配环节 → 只画公司+行业两条线，不渲染 chips。 */
+let histCtx = null;   // { data, dates, compN, indN, segs, seg, trend, rebase }
+
+function companyTrendHTML(data) {
+  histCtx = null;
+  const hist = data.history;
+  const pts = hist && Array.isArray(hist.points) ? hist.points : [];
+  if (pts.length < 20) return histHTML(hist);
+  const a = data.anchor;
+  const trend = data.indTrends;
+  if (!a?.industry || !trend || !Array.isArray(trend.dates)
+    || !Array.isArray(trend.industry) || trend.industry.length < 20) return histHTML(hist);
+
+  const dates = trend.dates;
+  const closeOf = new Map(pts.map((p) => [String(p[0]), Number(p[1])]));
+  const compRaw = dates.map((d) => {
+    const v = closeOf.get(String(d));
+    return Number.isFinite(v) ? v : NaN;
+  });
+  const i0 = compRaw.findIndex(Number.isFinite);   // 第一个共同交易日 = 基期
+  if (i0 < 0) return histHTML(hist);
+  const rebase = (arr) => {
+    const b = Number(arr[i0]);
+    if (!Number.isFinite(b) || !b) return null;
+    return arr.slice(0, dates.length).map((v) => (Number.isFinite(Number(v)) ? (Number(v) / b) * 100 : NaN));
+  };
+  const compN = rebase(compRaw);
+  const indN = rebase(trend.industry);
+  if (!compN || !indN) return histHTML(hist);
+
+  // 环节线候选：公司所属环节 ∩ segments 键，按行业内成员数排序
+  const segsAvail = trend.segments && typeof trend.segments === "object" ? trend.segments : {};
+  const order = new Map(indChainDist(a.industry).map((d, i) => [d.name, i]));
+  const segs = boardsOf(a.ticker)
+    .filter((b) => Array.isArray(segsAvail[b]) && segsAvail[b].length >= 20)
+    .sort((x, y) => (order.get(x) ?? 1e9) - (order.get(y) ?? 1e9));
+
+  histCtx = { data, dates, compN, indN, segs, seg: segs[0] || null, trend, rebase };
+  return `<div id="hist-sec">${companyTrendInnerHTML()}</div>`;
+}
+
+function companyTrendInnerHTML() {
+  const { data, dates, compN, indN, segs, seg, trend, rebase } = histCtx;
+  const a = data.anchor;
+  const lastV = (arr) => { for (let i = arr.length - 1; i >= 0; i--) if (Number.isFinite(arr[i])) return arr[i]; return NaN; };
+  const pctOf = (arr) => { const v = lastV(arr); return Number.isFinite(v) ? v - 100 : null; };
+  const series = [
+    { name: a.name, values: compN, color: cssVar("--primary", "#E8A33D"), width: 2.2, pct: pctOf(compN) },
+    { name: t("sector." + a.industry, a.industry), values: indN, color: cssVar("--text-soft", "#93A0B0"), width: 1.4, pct: pctOf(indN) },
+  ];
+  if (seg) {
+    const segN = rebase(trend.segments[seg]);
+    if (segN) series.push({ name: seg, seg, values: segN, color: cssVar("--ind-1", "#A29477"), width: 1.4, pct: pctOf(segN) });
+  }
+  const chips = segs.length ? `<div class="toolbar hist-segs">
+      <span class="sec-sub">${esc(t("hist.segLabel", "环节"))}</span>
+      ${segs.map((s) => `<button class="chip" type="button" data-hseg="${esc(s)}" aria-pressed="${s === seg}">${esc(s)}</button>`).join("")}
+    </div>` : "";
+  return trendChartHTML({
+    series, dates,
+    title: t("hist.title", "近一年走势"),
+    sub: t("hist.cmpSub", "公司收盘价前复权 · 与行业/环节指数同基期（=100）对照 · {n} 个交易日").replace("{n}", fmtInt(dates.length)),
+    foot: chips,
+  });
+}
+
+// 环节 chips 切换：只重绘走势图区块（#hist-sec 容器本身不动，监听器不丢）
+function rerenderCompanyTrend() {
+  const slot = document.getElementById("hist-sec");
+  if (slot && histCtx) slot.innerHTML = companyTrendInnerHTML();
+}
+
+/* ---- 锂电产业链看板（#/li） ------------------------------------------------
+   布局：上游·锂资源 → 中游·前驱体 → 四大主材（正极/负极/隔膜/电解液，2×2 子格）
+   → 中游·电芯 是主流线；锂电设备作配套、回收循环回上游，单独一排。
+   卡片 = 阶段名 + 公司数 + 简介 + 近一年迷你走势（序列为空 → "数据补齐中"占位）
+   + 近一月涨跌幅 + 代表公司（默认前 4，"全部 N 家"展开，公司链到 #/c/{code}）。 */
+function sparkSVG(vals, W = 168, H = 36) {
+  const n = vals.length;
+  let min = Infinity, max = -Infinity;
+  vals.forEach((v) => { if (v < min) min = v; if (v > max) max = v; });
+  const span = max - min || 1;
+  const x = (i) => 1 + (i / (n - 1)) * (W - 2);
+  const y = (v) => 2 + (1 - (v - min) / span) * (H - 4);
+  let d = "";
+  vals.forEach((v, i) => { d += `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`; });
+  const up = vals[n - 1] >= vals[0];
+  const line = cssVar(up ? "--rise" : "--fall", up ? "#F6465D" : "#2FB67C");
+  return `<svg class="li-spark-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">`
+    + `<path d="${d}" fill="none" stroke="${line}" stroke-width="1.2" stroke-linejoin="round" /></svg>`;
+}
+
+function liStageCard(s, vals) {
+  const companies = Array.isArray(s.companies) ? s.companies : [];
+  const usable = Array.isArray(vals) && vals.length >= 20;
+  const name = t("li.stage." + s.key, s.name);
+  const desc = t("li.desc." + s.key, s.desc || "");
+  let trendRow;
+  if (usable) {
+    // 近一月：末点 vs 约 21 个交易日前
+    const ref = Number(vals[Math.max(0, vals.length - 22)]);
+    const last = Number(vals[vals.length - 1]);
+    const pct = ref ? (last / ref - 1) * 100 : null;
+    trendRow = `<div class="li-spark">${sparkSVG(vals)}<span class="li-spark-pct">`
+      + `<b class="${changeClass(pct)}">${esc(fmtPct(pct))}</b>`
+      + `<span>${esc(t("trend.btempM", "近一月"))}</span></span></div>`;
+  } else {
+    trendRow = `<p class="li-pending">${esc(t("li.pending", "数据补齐中"))}</p>`;
+  }
+  const co = (c) => `<a class="li-co" href="#/c/${encodeURIComponent(c.code)}">${esc(c.name)}</a>`;
+  const first = companies.slice(0, 4), rest = companies.slice(4);
+  return `<div class="li-card${usable ? "" : " is-pending"}" data-stage="${esc(s.key)}">
+      <div class="li-card-head">
+        <h3 class="li-card-title">${esc(name)}</h3>
+        <span class="li-card-n">${esc(fmtInt(companies.length))} ${esc(t("ind.unitCompanies", "家"))}</span>
+      </div>
+      ${desc ? `<p class="li-card-desc">${esc(desc)}</p>` : ""}
+      ${trendRow}
+      <div class="li-cos">
+        ${first.map(co).join("")}
+        ${rest.length ? `<span class="li-co-rest" hidden>${rest.map(co).join("")}</span>`
+          + `<button class="chip li-more" type="button" data-li-more data-n="${companies.length}" aria-expanded="false">`
+          + `${esc(t("li.more", "全部 {n} 家").replace("{n}", companies.length))}</button>` : ""}
+      </div>
+    </div>`;
+}
+
+async function renderLithiumPage() {
+  app.innerHTML = "";
+  startLoading();
+  const [d, price] = await Promise.all([loadLithium(), loadLiPrice()]);
+  if (parseRoute().name !== "lithium") return;
+  stopLoading();
+  if (!d || !d.stages.length) {
+    app.innerHTML = `<p class="empty">${esc(t("li.error", "锂电看板数据没加载出来。"))}`
+      + ` <a href="#/">${esc(t("crumb.home", "全部行业"))}</a></p>`;
+    return;
+  }
+  const byKey = new Map(d.stages.map((s) => [s.key, s]));
+  const trends = (d.trends && d.trends.stages) || {};
+  const card = (k) => (byKey.has(k) ? liStageCard(byKey.get(k), trends[k]) : "");
+  const arrow = `<span class="li-arrow" aria-hidden="true">→</span>`;
+
+  const priceLast = price ? price.points[price.points.length - 1] : null;
+  const priceSec = price ? histHTML({ points: price.points }, {
+    title: t("li.priceTitle", "碳酸锂期货主力"),
+    sub: t("li.priceSub", "广期所 · 近一年日线 · 最新 {p}")
+      .replace("{p}", priceLast ? fmtInt(priceLast[1]) : "—"),
+  }) : "";
+
+  app.innerHTML = `
+    <div class="crumb"><a href="#/"><span class="arr" aria-hidden="true">←</span> ${esc(t("crumb.home", "全部行业"))}</a></div>
+
+    <header class="ind-head">
+      <h1 class="ind-title">${esc(t("li.title", "锂电产业链"))}</h1>
+      <p class="sec-sub">${esc(t("li.sub", "上游锂资源 → 中游主材与电芯 → 回收循环；环节指数为成员等权、基期 100"))}</p>
+    </header>
+
+    <section class="sec">
+      <div class="sec-head">
+        <h2 class="sec-title">${esc(t("li.flowTitle", "链条全景"))}</h2>
+        <span class="sec-sub">${esc(t("li.flowSub", "点公司名进公司页；卡片上的迷你图是近一年环节指数"))}</span>
+        <span class="sec-rule"></span>
+      </div>
+      <div class="li-flow">
+        <div class="li-flow-main">
+          ${card("upstream_lithium")}${arrow}${card("precursor")}${arrow}
+          <div class="li-mats">${["cathode", "anode", "separator", "electrolyte"].map(card).join("")}</div>
+          ${arrow}${card("cell")}
+        </div>
+        <div class="li-flow-side">
+          <div class="li-support">
+            <p class="li-side-lbl">${esc(t("li.support", "配套"))}</p>
+            ${card("equipment")}
+          </div>
+          <div class="li-support">
+            <p class="li-side-lbl">${esc(t("li.loopBack", "循环回上游"))} ↩</p>
+            ${card("recycling")}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    ${priceSec}
+
+    <p class="sec-sub li-src">${esc(t("li.srcNote",
+      "数据来源：东方财富 · akshare（公开行情）· 价格为碳酸锂期货主力（广期所）· 更新 {d}")
+      .replace("{d}", d.generatedAt || "—"))}</p>`;
+
+  // "全部 N 家" 展开/收起：只动本卡片的其余公司列表
+  app.querySelector(".li-flow")?.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-li-more]");
+    if (!b) return;
+    const rest = b.parentElement.querySelector(".li-co-rest");
+    if (!rest) return;
+    const open = rest.hidden;
+    rest.hidden = !open;
+    b.setAttribute("aria-expanded", String(open));
+    b.textContent = open ? t("group.collapse", "收起") : t("li.more", "全部 {n} 家").replace("{n}", b.dataset.n);
+  });
+}
+
 function renderCompany(data) {
   // 首次进入按视口宽度选默认值：宽屏先看全貌，窄屏保持字号可读
   if (!mapZoom) mapZoom = window.innerWidth >= 900 ? "fit" : "full";
@@ -1895,9 +2956,11 @@ function renderCompany(data) {
           ? t("company.realTag", "真实行情")
           : t("company.simulated", "模拟数据"))}</span>` : ""}
         ${f && f.suspended ? `<span class="tag">${esc(t("company.suspended", "停牌"))}</span>` : ""}
+        ${data.generatedAt ? `<span class="tag">${esc(t("company.asOf", "截至 {d}").replace("{d}", data.generatedAt))}</span>` : ""}
+        ${staleNoteHTML()}
       </div>
       <div class="pr-metrics">${metrics.join("")}</div>
-      <div class="pr-actions">${savePill(a.ticker)}</div>
+      <div class="pr-actions">${savePill(a.ticker)}${comparePill(a.ticker)}</div>
       ${total ? `<div class="pr-chain">
         <div class="pr-chain-label">
           <span>${esc(t("company.upCount", "上游 {n} 家").replace("{n}", upN))}</span>
@@ -1906,6 +2969,7 @@ function renderCompany(data) {
         <div class="chain-bar"><span class="chain-seg up" style="width:${upPct.toFixed(1)}%"></span><span class="chain-seg down" style="width:${(100 - upPct).toFixed(1)}%"></span></div>
       </div>` : ""}
     </header>
+    ${companyTrendHTML(data)}
     ${introHTML(pf)}
 
     <section class="sec">
@@ -1956,6 +3020,7 @@ function renderCompany(data) {
             <span class="peer-name">${esc(p.name)}</span>
             <span class="peer-ticker">${esc(p.ticker)}</span>
             <span class="peer-shared">${esc(t("company.sharedFmt", "共同 {n} 个环节").replace("{n}", p.shared))}：${esc(p.boards.slice(0, 3).join("、"))}${p.boards.length > 3 ? "…" : ""}</span>
+            ${compareDot(p.ticker)}
           </a>`).join("")}
       </div>
     </section>` : ""}
@@ -1968,6 +3033,14 @@ function renderCompany(data) {
     if (chip) goToSearch(chip.dataset.psearch);
   });
 
+  // 走势图的环节 chips：切换对照的环节线，只重绘本区块
+  document.getElementById("hist-sec")?.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-hseg]");
+    if (!b || !histCtx) return;
+    histCtx.seg = b.dataset.hseg;
+    rerenderCompanyTrend();
+  });
+
   // 适应宽度 ⇄ 原始尺寸（原始尺寸下横向平移看完整链条）
   document.getElementById("map-zoom")?.addEventListener("click", (e) => {
     mapZoom = mapZoom === "fit" ? "full" : "fit";
@@ -1976,6 +3049,9 @@ function renderCompany(data) {
     b.setAttribute("aria-pressed", String(mapZoom === "fit"));
     requestAnimationFrame(drawMap);
   });
+
+  // 导出 PNG：DOM+SVG 没法直接截图，用 vcmModel 的纯数据离屏重绘
+  document.getElementById("vcm-export")?.addEventListener("click", () => exportVcmPNG(data));
 
   // 展开 / 收起分组
   app.querySelectorAll(".vcm-cluster-head").forEach((head) => {
@@ -2057,6 +3133,80 @@ function companyPeers(ticker, limit = 24) {
   }
   out.sort((x, y) => y.shared - x.shared || x.ticker.localeCompare(y.ticker));
   return out.slice(0, limit);
+}
+
+/* ---- 公司对比：#/x/{code},{code},... ---------------------------------------
+   对比筐里 2–4 家并排成表：身份行用 index.json，财务行用按需加载的 f/ 全量。
+   无效代码不炸表——行内提示并跳过。 */
+async function renderCompare(tickers) {
+  app.innerHTML = "";
+  startLoading();
+  const codes = [...new Set(tickers)].slice(0, COMPARE_MAX);
+  const [, ...quotes] = await Promise.all([loadGraph(), ...codes.map(loadQuote)]);
+  stopLoading();
+  if (parseRoute().name !== "compare") return;
+
+  const byTicker = new Map((indexData?.companies || []).map((c) => [c.ticker, c]));
+  const cols = [];
+  const invalid = [];
+  codes.forEach((tk, i) => {
+    const info = byTicker.get(tk);
+    if (info) cols.push({ tk, info, f: quotes[i] || null });
+    else invalid.push(tk);
+  });
+  if (!cols.length) {
+    app.innerHTML = `<p class="empty">${esc(t("cmp.none", "没有可对比的公司。"))}`
+      + ` <a href="#/">${esc(t("crumb.home", "全部行业"))}</a></p>`;
+    return;
+  }
+
+  const rows = [
+    { label: t("filter.industry", "行业"), val: (c) => esc(t("sector." + c.info.industry, c.info.industry)) },
+    { label: t("filter.board", "板块"), val: (c) => esc(t("board." + c.info.board, c.info.board)) },
+    { label: t("metric.price", "最新价"), num: 1, val: (c) => (c.f ? esc(fmtPrice(c.f.price)) : "—") },
+    { label: t("metric.chg", "涨跌幅"), num: 1, val: (c) => (c.f
+      ? `<span class="${changeClass(c.f.changePercent)}">${esc(fmtPct(c.f.changePercent))}</span>` : "—") },
+    { label: t("metric.cap", "总市值"), num: 1, val: (c) => (c.f ? esc(fmtCap(c.f.marketCap)) : "—") },
+    { label: t("metric.pe", "市盈率TTM"), num: 1, val: (c) => (c.f
+      ? (c.f.lossMaking ? esc(t("company.loss", "亏损")) : esc(fmtNum(c.f.trailingPE, 1))) : "—") },
+    { label: t("metric.fpe", "市盈率(动)"), num: 1, val: (c) => (c.f ? esc(fmtNum(c.f.forwardPE, 1)) : "—") },
+    { label: t("metric.gm", "毛利率"), num: 1, val: (c) => (c.f ? esc(fmtPct(c.f.grossMargins, false)) : "—") },
+    { label: t("metric.pm", "净利率"), num: 1, val: (c) => (c.f ? esc(fmtPct(c.f.profitMargins, false)) : "—") },
+    { label: t("metric.rg", "营收增速"), num: 1, val: (c) => (c.f ? esc(fmtPct(c.f.revenueGrowth)) : "—") },
+    { label: t("metric.eps", "每股收益"), num: 1, val: (c) => (c.f ? esc(fmtNum(c.f.trailingEps)) : "—") },
+    { label: t("cmp.row.chains", "产业链环节"), val: (c) => {
+      const bs = boardsOf(c.tk);
+      return bs.length ? bs.map((b) => `<span class="tag">${esc(b)}</span>`).join(" ") : "—";
+    } },
+  ];
+
+  app.innerHTML = `
+    <div class="crumb"><a href="#/"><span class="arr" aria-hidden="true">←</span> ${esc(t("crumb.home", "全部行业"))}</a></div>
+    <section class="sec cmp-sec">
+      <div class="sec-head">
+        <h2 class="sec-title">${esc(t("cmp.titlePage", "公司对比"))}</h2>
+        <span class="sec-sub">${esc(t("cmp.sub", "{n} 家公司并排看；点表头公司名进它自己的页").replace("{n}", cols.length))}</span>
+        <span class="sec-rule"></span>
+      </div>
+      ${invalid.length ? `<p class="cmp-invalid">${esc(t("cmp.invalid", "代码 {c} 无效，已跳过").replace("{c}", invalid.join("、")))}</p>` : ""}
+      <div class="cmp-scroll">
+        <table class="cmp-table">
+          <thead><tr>
+            <th class="cmp-metric-col">${esc(t("cmp.col.metric", "指标"))}</th>
+            ${cols.map((c) => `<th>
+              <a class="cmp-co" href="#/c/${encodeURIComponent(c.tk)}">${esc(c.info.name)}</a>
+              <span class="cmp-tk">${esc(c.tk)}</span>
+            </th>`).join("")}
+          </tr></thead>
+          <tbody>
+            ${rows.map((r) => `<tr>
+              <th>${esc(r.label)}</th>
+              ${cols.map((c) => `<td class="${r.num ? "num" : ""}">${r.val(c)}</td>`).join("")}
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+    </section>`;
 }
 
 /* ---- 成分归属：每家公司只归到一个"主环节" ---------------------------------
@@ -3397,6 +4547,20 @@ function refreshChrome() {
   const trayClear = document.getElementById("tray-clear");
   if (trayClear) trayClear.textContent = t("saved.clear", "清空");
   renderTray();   // 刷新空状态文案和公司名
+  const cmpLabel = document.getElementById("cmp-label");
+  if (cmpLabel) cmpLabel.textContent = t("cmp.label", "对比");
+  const cmpTitle = document.getElementById("cmp-title-text");
+  if (cmpTitle) cmpTitle.textContent = t("cmp.title", "对比清单");
+  const cmpClear = document.getElementById("cmp-clear");
+  if (cmpClear) cmpClear.textContent = t("saved.clear", "清空");
+  renderCmpTray();
+  // 页脚链接：观点页从顶栏降级到这里，另开一个"数据纠错"出口
+  const fl = document.getElementById("footer-links");
+  if (fl) {
+    fl.innerHTML = `<a href="#/vision">${esc(t("nav.vision", "我们的观点"))}</a>`
+      + `<span class="footer-dot" aria-hidden="true">·</span>`
+      + `<a href="https://github.com/zhangyh066/china-chain/issues/new/choose" target="_blank" rel="noopener">${esc(t("footer.feedback", "数据纠错"))}</a>`;
+  }
 }
 
 // 全景图谱入口上的"新"角标：前三次访问（一次会话算一次）弹出来，之后永久退休。
@@ -3497,6 +4661,7 @@ async function boot() {
   applyAccent();
   applyMotion();
   loadSaved();
+  loadCompare();
   mapZoom = settings.zoom || mapZoom;
   const bootUI = startBootConsole();   // 启动序列开跑（今天播过/关动效则返回 null）
 
@@ -3518,7 +4683,8 @@ async function boot() {
   bootUI?.indexDone();
 
   // graph 给首页的行业概览卡提供环节分布（行情的三个数已随 index.json 下来）。
-  await loadGraph();
+  // 全市场走势指数与 graph 并行拉，首页首帧就能把走势图一起画出来。
+  await Promise.all([loadGraph(), loadTrendsIndex()]);
   bootUI?.graphDone();
   // 把 index.json 里的轻量行情字段展开成 quotes 映射，下游渲染代码不用改。
   // 三个数全缺的公司不建条目——卡片本来就会按"没有数字"渲染。
@@ -3534,6 +4700,7 @@ async function boot() {
   // 否则页脚会一直停留在语言包里的兜底文案
   refreshChrome();
   setupSaved();
+  setupCompare();
 
   // 桌面顶栏输入框和手机悬浮搜索条共用同一份状态
   const applySearch = (value) => {

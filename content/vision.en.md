@@ -4,8 +4,8 @@
 
 We wanted to look **vertically**: put a company back inside its chain, and first answer three questions.
 
-- Who stands above it? (Two upstream tiers: direct suppliers, and the suppliers of those suppliers.)
-- Who rests on it? (Two downstream tiers: direct customers, and their customers.)
+- Who stands above it? (Two upstream tiers: supply directions inferred from how the industry is actually structured, and one tier further up — inferred relationships, not verified supply facts.)
+- Who rests on it? (Two downstream tiers: inferred demand destinations, and one tier further down — equally unverified. Of the 4,057 companies on chains, only 151 have hand-curated, link-by-link maps; they are the sole exception.)
 - What holds it in place? (Where it sits on the chain: which links it belongs to, and who shares them.)
 
 ## Why this is worth doing
@@ -43,7 +43,7 @@ A list of four thousand companies is just a column of tickers. Put each one back
 
 ### 2. A chain's value is in its tiers, not its length
 
-Drawing only direct suppliers and direct customers gives you a flat picture of who deals with whom: it acknowledges the links but says nothing about transmission. Split the chain into tiers and a company's real neighbourhood becomes five to ten times its direct ties — **and it is precisely in those extra tiers that risk and demand actually travel**.
+Drawing only the immediate neighbours gives you a flat picture of who deals with whom: it acknowledges the links but says nothing about transmission. And those "direct" links are themselves inferred from industry structure, not verified company by company. Even so, once the chain is split into tiers, a company's real neighbourhood becomes five to ten times its immediate ties — **and it is precisely in those extra tiers that risk and demand actually travel**.
 
 ### 3. Events travel down the chain — in order
 

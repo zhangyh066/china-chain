@@ -88,6 +88,11 @@ await send('Runtime.enable');
 await send('Page.enable');
 await send('Network.enable');
 
+// 整页重载开跑：标签页可能被上一个脚本用过，模块级的行情缓存还在内存里，
+// 不刷新的话 f/{code}.json 不会重新请求，"按需加载"断言会假阴性
+await send('Page.navigate', { url: BASE + '?_=' + Date.now() + '#/' });
+await sleep(2500);
+
 console.log('— 首页 —');
 await navigate(BASE + '#/');
 const homeReady = await waitFor(`document.querySelectorAll('.hero-stat b').length === 4
@@ -127,6 +132,8 @@ const search = JSON.parse(await evaluate(`JSON.stringify({
   title: document.querySelector('.pr-title')?.textContent || null,
   metrics: document.querySelectorAll('.pr-metrics .metric').length,
   realTag: document.body.textContent.includes('真实行情'),
+  asOfTag: !!document.querySelector('.pr-tags .tag') && document.querySelector('.pr-tags')?.textContent.includes('截至'),
+  cmpPill: !!document.querySelector('.pr-actions [data-compare]'),
   intro: !!document.querySelector('.intro-sec'),
   introBiz: document.querySelector('.intro-biz')?.textContent?.slice(0, 30) || null
 })`));
@@ -134,6 +141,8 @@ check('跳到公司页', search.hash === '#/c/002594', search.hash);
 check('公司名正确', search.title && search.title.includes('比亚迪'), search.title);
 check('十项财务指标（f/ 按需加载）', search.metrics === 10, `实际 ${search.metrics}`);
 check('标注真实行情', search.realTag === true);
+check('头部带"截至"日期标签', search.asOfTag === true);
+check('公司页带"加入对比"按钮', search.cmpPill === true);
 check('公司介绍块（p/ 按需加载）', search.intro === true, search.introBiz);
 
 console.log('— 行业页 —');
@@ -147,6 +156,17 @@ const ind = JSON.parse(await evaluate(`JSON.stringify({
 })`));
 check('行业页统计', ind.stats === 4, `实际 ${ind.stats}`);
 check('行业页公司卡片', ind.cards > 0 && ind.cardNums > 0, `${ind.cards} 张卡 / ${ind.cardNums} 张带数字`);
+
+// 排序 chips：存在 → 点"涨幅"→ 第一张卡片应与默认序不同（默认序是市值序，
+// 涨幅第一与市值第一恰为同一家概率极低；另校验 aria-pressed 落定）
+const sortChips = await evaluate(`document.querySelectorAll('#ind-toolbar [data-sort]').length`);
+check('行业页排序 chips', sortChips === 4, `实际 ${sortChips}`);
+const firstBefore = await evaluate(`document.querySelector('#ind-list .card .card-ticker')?.textContent || ''`);
+await evaluate(`document.querySelector('#ind-toolbar [data-sort="chg"]').click()`);
+await waitFor(`document.querySelector('#ind-toolbar [data-sort="chg"]')?.getAttribute('aria-pressed') === 'true'`);
+const firstAfter = await evaluate(`document.querySelector('#ind-list .card .card-ticker')?.textContent || ''`);
+check('点"涨幅"后第一张卡片与默认序不同', !!firstAfter && firstAfter !== firstBefore,
+  `${firstBefore} → ${firstAfter}`);
 
 console.log('— 全景图谱 —');
 await navigate(BASE + '#/worldmap');
@@ -165,6 +185,31 @@ await navigate(BASE + '#/vision');
 // 注意：要等"文字非空"而不是"元素存在"——旧页面的标题元素在路由切换瞬间还在 DOM 里
 const visionLen = await waitFor(`(document.querySelector('#app h2, #app h1')?.textContent || '').length > 0`, 15000);
 check('观点页 markdown 渲染', visionLen === true);
+
+console.log('— 页脚链接（观点降级 + 数据纠错）—');
+const foot = JSON.parse(await evaluate(`JSON.stringify({
+  links: !!document.getElementById('footer-links'),
+  feedback: !!document.querySelector('#footer-links a[href*="issues/new/choose"]'),
+  feedbackText: (document.getElementById('footer-links')?.textContent || '').includes('数据纠错'),
+  visionLink: !!document.querySelector('#footer-links a[href="#/vision"]'),
+  navVisionGone: !document.getElementById('nav-vision')
+})`));
+check('顶栏已撤下观点链接', foot.navVisionGone === true);
+check('页脚含"数据纠错"链接（GitHub issues）', foot.feedback && foot.feedbackText);
+check('页脚含"我们的观点"链接', foot.visionLink === true);
+
+console.log('— 公司对比 #/x/ —');
+await navigate(BASE + '#/x/300750,002594');
+const cmpReady = await waitFor(`document.querySelectorAll('.cmp-table thead th').length >= 3
+  && document.querySelectorAll('.cmp-table tbody tr').length >= 10`, 20000);
+check('对比页渲染完成', cmpReady === true);
+const cmp = JSON.parse(await evaluate(`JSON.stringify({
+  cols: document.querySelectorAll('.cmp-table thead th').length - 1,
+  rows: document.querySelectorAll('.cmp-table tbody tr').length,
+  names: [...document.querySelectorAll('.cmp-co')].map(a => a.textContent)
+})`));
+check('对比表渲染出两列公司', cmp.cols === 2, JSON.stringify(cmp.names));
+check('对比表 12 行指标', cmp.rows === 12, `实际 ${cmp.rows}`);
 
 console.log('— PWA manifest —');
 const manifest = JSON.parse(await evaluate(`(async()=>{const r=await fetch('./manifest.webmanifest'); return r.ok?JSON.stringify(await r.json()):'null'})()`) || null);
