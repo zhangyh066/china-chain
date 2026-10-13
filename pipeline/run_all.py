@@ -17,8 +17,8 @@
                   fetch_history.py 无视缓存重抓；其余脚本本来就不吃这个参数）
 
 末尾固定追加两步：build_trends.py（日线 → 行业/环节趋势指数，仅当 data/h/
-目录存在时跑）与 build_lithium.py（锂电产业链深耕产物，仅当 data/p/ 存在时跑）
-——依赖未就绪就跳过，不算失败。
+目录存在时跑）与 build_chains.py（锂电/光伏/半导体产业链深耕产物，仅当
+data/p/ 存在时跑）——依赖未就绪就跳过，不算失败。
 
 用法：
   python run_all.py                  # 六步，增量（有缓存的自动跳过联网）
@@ -42,7 +42,7 @@ STEPS = [
 ]
 HISTORY_STEP = ("fetch_history.py", True)
 TRENDS_STEP = ("build_trends.py", False)
-LITHIUM_STEP = ("build_lithium.py", False)
+CHAINS_STEP = ("build_chains.py", False)
 
 
 def run(script, args):
@@ -86,15 +86,15 @@ def main():
         print("\n-- 跳过 build_trends.py：data/h/ 不存在"
               "（先跑 --with-history 抓日线）", flush=True)
 
-    # 锂电深耕产物依赖 data/p/ 公司档案：有档案才跑，缺了跳过（不算失败）
+    # 产业链深耕产物依赖 data/p/ 公司档案：有档案才跑，缺了跳过（不算失败）
     if os.path.isdir(os.path.join(os.path.dirname(HERE), "data", "p")):
-        rc = run(LITHIUM_STEP[0], [])
+        rc = run(CHAINS_STEP[0], [])
         n_steps += 1
         if rc:
-            print(f"\n[FAIL] build_lithium.py 中断，总耗时 {(time.time()-t0)/60:.1f} 分钟")
+            print(f"\n[FAIL] build_chains.py 中断，总耗时 {(time.time()-t0)/60:.1f} 分钟")
             return rc
     else:
-        print("\n-- 跳过 build_lithium.py：data/p/ 不存在"
+        print("\n-- 跳过 build_chains.py：data/p/ 不存在"
               "（先跑前五步生成公司档案）", flush=True)
 
     print(f"\n[ok] {n_steps} 步全部完成，总耗时 {(time.time()-t0)/60:.1f} 分钟")

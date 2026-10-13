@@ -605,21 +605,41 @@ function loadIndustryTrends(ind) {
   return indTrendsCache.get(ind);
 }
 
-/* 锂电产业链看板：data/chain/lithium.json（9 阶段 + 各环节等权指数，基期 100；
-   后台补抓期间个别环节序列可能还是 []——渲染层按"数据补齐中"降级，不算错），
-   data/price/lithium.json（碳酸锂期货主力日线）。缺失/断网静默降级。 */
-let lithiumPromise = null;
-let lithiumData = null;
-function loadLithium() {
-  return lithiumPromise ||= getJSON("./data/chain/lithium.json")
-    .then((d) => (lithiumData = (d && Array.isArray(d.stages) ? d : null)))
-    .catch(() => (lithiumData = null));
+/* 产业链看板：data/chain/{key}.json（阶段 + 各环节等权指数，基期 100；
+   顶层自带双语 meta：title/titleEn、sub/subEn，阶段自带 name/nameEn/desc/descEn），
+   data/price/{key}.json（期货主力日线，有的链没有 → 价格区块自动不出现）。
+   后台补抓期间个别环节序列可能还是 []——渲染层按"数据补齐中"降级，不算错。
+   缺失/断网静默降级。 */
+const CHAIN_KEYS = ["lithium", "pv", "semi"];
+const chainBoardCache = new Map(); // key → Promise<data|null>
+const chainBoardData = new Map();  // key → 已落地的数据（首页入口卡同步读取用）
+function loadChainBoard(key) {
+  if (!chainBoardCache.has(key)) {
+    chainBoardCache.set(key, getJSON(`./data/chain/${key}.json`)
+      .then((d) => {
+        d = d && Array.isArray(d.stages) ? d : null;
+        chainBoardData.set(key, d);
+        return d;
+      })
+      .catch(() => {
+        chainBoardData.set(key, null);
+        return null;
+      }));
+  }
+  return chainBoardCache.get(key);
 }
-let liPricePromise = null;
-function loadLiPrice() {
-  return liPricePromise ||= getJSON("./data/price/lithium.json")
-    .then((d) => (d && Array.isArray(d.points) && d.points.length >= 20 ? d : null))
-    .catch(() => null);
+const chainPriceCache = new Map(); // key → Promise<data|null>
+function loadChainPrice(key) {
+  if (!chainPriceCache.has(key)) {
+    chainPriceCache.set(key, getJSON(`./data/price/${key}.json`)
+      .then((d) => (d && Array.isArray(d.points) && d.points.length >= 20 ? d : null))
+      .catch(() => null));
+  }
+  return chainPriceCache.get(key);
+}
+// 数据自带双语：英文环境优先 *En 字段，缺失回落中文字段
+function pickLang(zh, en) {
+  return (getLocale() === "en" && en) ? en : (zh || en || "");
 }
 
 /* ---- 行情新鲜度 ------------------------------------------------------------
@@ -668,8 +688,10 @@ function parseRoute() {
     };
   }
   if (h === "vision") return { name: "vision" };
-  // 锂电产业链看板：#/li
-  if (h === "li") return { name: "lithium" };
+  // 产业链看板：#/li（锂，旧链接保留）、#/pv（光伏）、#/semi（半导体）
+  if (h === "li" || h === "pv" || h === "semi") {
+    return { name: "chain", chainKey: h === "li" ? "lithium" : h };
+  }
   // "atlas" 是"全景图谱"的旧名字，留着旧链接不失效
   if (h === "worldmap" || h === "atlas") return { name: "worldmap" };
   return { name: "home" };
@@ -696,8 +718,8 @@ async function route() {
 
   if (r.name === "vision") {
     await renderVision();
-  } else if (r.name === "lithium") {
-    await renderLithiumPage();
+  } else if (r.name === "chain") {
+    await renderChainPage(r.chainKey);
   } else if (r.name === "worldmap") {
     await renderWorldMap();
   } else if (r.name === "industry") {
@@ -1416,24 +1438,44 @@ function boardTempHTML() {
   </div>`;
 }
 
-/* 首页的锂电看板入口：一行卡片式链接，风格沿用 chip/arr */
-function liEntryHTML() {
+/* 首页的产业链看板入口：一个区块三张卡（锂/光伏/半导体），标题/sub 读各链
+   JSON 自带的双语 meta；某条链 404 就跳过那张卡。数据是异步的，正文先放
+   占位槽，渲染完后由 renderChainEntries 填进来（已缓存时同步填充无闪烁）。 */
+const CHAIN_HASH = { lithium: "#/li", pv: "#/pv", semi: "#/semi" };
+function chainEntriesHTML() {
+  const cards = CHAIN_KEYS.map((k) => {
+    const d = chainBoardData.get(k);
+    if (!d) return "";
+    return `<a class="li-entry li-entry-col" href="${CHAIN_HASH[k]}">
+      <span class="li-entry-top"><span class="li-entry-title">${esc(pickLang(d.title, d.titleEn))}</span><span class="arr" aria-hidden="true">→</span></span>
+      <span class="li-entry-sub">${esc(pickLang(d.sub, d.subEn))}</span>
+    </a>`;
+  }).join("");
+  if (!cards) return "";
   return `<section class="sec li-entry-sec">
-    <a class="li-entry" href="#/li">
-      <span class="li-entry-title">${esc(t("li.entryTitle", "锂电产业链看板"))}</span>
-      <span class="li-entry-sub">${esc(t("li.entrySub", "上游锂资源 → 中游主材与电芯 → 回收 · 环节指数与碳酸锂期货价格"))}</span>
-      <span class="arr" aria-hidden="true">→</span>
-    </a>
+    <div class="sec-head">
+      <h2 class="sec-title">${esc(t("cboard.entrySecTitle", "产业链看板"))}</h2>
+      <span class="sec-rule"></span>
+    </div>
+    <div class="li-entries">${cards}</div>
   </section>`;
+}
+async function renderChainEntries() {
+  const slot = document.getElementById("chain-entries");
+  if (!slot) return;
+  await Promise.all(CHAIN_KEYS.map(loadChainBoard));
+  if (!slot.isConnected) return;
+  slot.innerHTML = chainEntriesHTML();
 }
 
 function homeBodyHTML() {
   const term = searchTerm.trim();
-  return term ? searchResultsHTML(term) : marketTrendHTML() + liEntryHTML() + marketRingHTML();
+  return term ? searchResultsHTML(term) : marketTrendHTML() + `<div id="chain-entries">${chainEntriesHTML()}</div>` + marketRingHTML();
 }
 
 // 首页正文渲染完之后要画环（canvas 必须先插进 DOM 才能量尺寸）
 function afterHomeBody() {
+  renderChainEntries();
   // 环节温度榜 tab：两个面板都已预渲染，只翻 hidden / aria-pressed
   document.querySelector(".btemp-tabs")?.addEventListener("click", (e) => {
     const b = e.target.closest("[data-btemp]");
@@ -2779,11 +2821,38 @@ function rerenderCompanyTrend() {
   if (slot && histCtx) slot.innerHTML = companyTrendInnerHTML();
 }
 
-/* ---- 锂电产业链看板（#/li） ------------------------------------------------
-   布局：上游·锂资源 → 中游·前驱体 → 四大主材（正极/负极/隔膜/电解液，2×2 子格）
-   → 中游·电芯 是主流线；锂电设备作配套、回收循环回上游，单独一排。
+/* ---- 产业链看板（#/li、#/pv、#/semi） ---------------------------------------
+   页面结构由数据驱动：标题/sub/阶段名/简介全部读 chain JSON 的双语 meta；
+   只有布局（哪些阶段进主流线、哪些是配套排）按链配置——
+   主流线里的子数组表示 2×2 子格（锂电的四大主材）。未配置的链回退为全部阶段一字排开。
    卡片 = 阶段名 + 公司数 + 简介 + 近一年迷你走势（序列为空 → "数据补齐中"占位）
    + 近一月涨跌幅 + 代表公司（默认前 4，"全部 N 家"展开，公司链到 #/c/{code}）。 */
+const CHAIN_LAYOUTS = {
+  // 锂：上游锂资源 → 前驱体 → 四大主材 → 电芯；设备配套、回收循环回上游
+  lithium: {
+    main: ["upstream_lithium", "precursor", ["cathode", "anode", "separator", "electrolyte"], "cell"],
+    side: [
+      { label: ["cboard.support", "配套"], keys: ["equipment"] },
+      { label: ["cboard.loopBack", "循环回上游"], suffix: " ↩", keys: ["recycling"] },
+    ],
+  },
+  // 光伏：硅料 → 硅片 → 电池片 → 组件；玻璃/胶膜是辅材，逆变器/设备是配套
+  pv: {
+    main: ["poly_silicon", "wafer", "cell_pv", "module"],
+    side: [
+      { label: ["cboard.materials", "辅材"], keys: ["glass", "film"] },
+      { label: ["cboard.support", "配套"], keys: ["inverter", "equipment_pv"] },
+    ],
+  },
+  // 半导体：设计 → 制造代工 → 封测；设备/材料/EDA 是上游支撑
+  semi: {
+    main: ["design", "foundry", "osat"],
+    side: [
+      { label: ["cboard.upstreamSupport", "上游支撑"], keys: ["equipment_semi", "material", "eda"] },
+    ],
+  },
+};
+
 function sparkSVG(vals, W = 168, H = 36) {
   const n = vals.length;
   let min = Infinity, max = -Infinity;
@@ -2802,8 +2871,8 @@ function sparkSVG(vals, W = 168, H = 36) {
 function liStageCard(s, vals) {
   const companies = Array.isArray(s.companies) ? s.companies : [];
   const usable = Array.isArray(vals) && vals.length >= 20;
-  const name = t("li.stage." + s.key, s.name);
-  const desc = t("li.desc." + s.key, s.desc || "");
+  const name = pickLang(s.name, s.nameEn);
+  const desc = pickLang(s.desc, s.descEn);
   let trendRow;
   if (usable) {
     // 近一月：末点 vs 约 21 个交易日前
@@ -2814,7 +2883,7 @@ function liStageCard(s, vals) {
       + `<b class="${changeClass(pct)}">${esc(fmtPct(pct))}</b>`
       + `<span>${esc(t("trend.btempM", "近一月"))}</span></span></div>`;
   } else {
-    trendRow = `<p class="li-pending">${esc(t("li.pending", "数据补齐中"))}</p>`;
+    trendRow = `<p class="li-pending">${esc(t("cboard.pending", "数据补齐中"))}</p>`;
   }
   const co = (c) => `<a class="li-co" href="#/c/${encodeURIComponent(c.code)}">${esc(c.name)}</a>`;
   const first = companies.slice(0, 4), rest = companies.slice(4);
@@ -2829,19 +2898,20 @@ function liStageCard(s, vals) {
         ${first.map(co).join("")}
         ${rest.length ? `<span class="li-co-rest" hidden>${rest.map(co).join("")}</span>`
           + `<button class="chip li-more" type="button" data-li-more data-n="${companies.length}" aria-expanded="false">`
-          + `${esc(t("li.more", "全部 {n} 家").replace("{n}", companies.length))}</button>` : ""}
+          + `${esc(t("cboard.more", "全部 {n} 家").replace("{n}", companies.length))}</button>` : ""}
       </div>
     </div>`;
 }
 
-async function renderLithiumPage() {
+async function renderChainPage(chainKey) {
   app.innerHTML = "";
   startLoading();
-  const [d, price] = await Promise.all([loadLithium(), loadLiPrice()]);
-  if (parseRoute().name !== "lithium") return;
+  const [d, price] = await Promise.all([loadChainBoard(chainKey), loadChainPrice(chainKey)]);
+  const r = parseRoute();
+  if (r.name !== "chain" || r.chainKey !== chainKey) return;
   stopLoading();
   if (!d || !d.stages.length) {
-    app.innerHTML = `<p class="empty">${esc(t("li.error", "锂电看板数据没加载出来。"))}`
+    app.innerHTML = `<p class="empty">${esc(t("cboard.error", "看板数据没加载出来。"))}`
       + ` <a href="#/">${esc(t("crumb.home", "全部行业"))}</a></p>`;
     return;
   }
@@ -2849,52 +2919,57 @@ async function renderLithiumPage() {
   const trends = (d.trends && d.trends.stages) || {};
   const card = (k) => (byKey.has(k) ? liStageCard(byKey.get(k), trends[k]) : "");
   const arrow = `<span class="li-arrow" aria-hidden="true">→</span>`;
+  const layout = CHAIN_LAYOUTS[chainKey]
+    || { main: d.stages.map((s) => s.key), side: [] };
 
+  // 价格名：数据文件自带（暂无英文名字段，EN 环境也展示中文合约名）
+  const priceName = price ? pickLang(price.name, price.nameEn) : "";
   const priceLast = price ? price.points[price.points.length - 1] : null;
   const priceSec = price ? histHTML({ points: price.points }, {
-    title: t("li.priceTitle", "碳酸锂期货主力"),
-    sub: t("li.priceSub", "广期所 · 近一年日线 · 最新 {p}")
+    title: priceName,
+    sub: t("cboard.priceSub", "广期所 · 近一年日线 · 最新 {p}")
       .replace("{p}", priceLast ? fmtInt(priceLast[1]) : "—"),
   }) : "";
+
+  const srcNote = price
+    ? t("cboard.srcNote",
+        "数据来源：东方财富 · akshare（公开行情）· 价格为{n}（广期所）· 更新 {d}")
+        .replace("{n}", priceName).replace("{d}", d.generatedAt || "—")
+    : t("cboard.srcNoteNoPrice", "数据来源：东方财富 · akshare（公开行情）· 更新 {d}")
+        .replace("{d}", d.generatedAt || "—");
 
   app.innerHTML = `
     <div class="crumb"><a href="#/"><span class="arr" aria-hidden="true">←</span> ${esc(t("crumb.home", "全部行业"))}</a></div>
 
     <header class="ind-head">
-      <h1 class="ind-title">${esc(t("li.title", "锂电产业链"))}</h1>
-      <p class="sec-sub">${esc(t("li.sub", "上游锂资源 → 中游主材与电芯 → 回收循环；环节指数为成员等权、基期 100"))}</p>
+      <h1 class="ind-title">${esc(pickLang(d.title, d.titleEn))}</h1>
+      <p class="sec-sub">${esc(pickLang(d.sub, d.subEn))}</p>
     </header>
 
     <section class="sec">
       <div class="sec-head">
-        <h2 class="sec-title">${esc(t("li.flowTitle", "链条全景"))}</h2>
-        <span class="sec-sub">${esc(t("li.flowSub", "点公司名进公司页；卡片上的迷你图是近一年环节指数"))}</span>
+        <h2 class="sec-title">${esc(t("cboard.flowTitle", "链条全景"))}</h2>
+        <span class="sec-sub">${esc(t("cboard.flowSub", "点公司名进公司页；卡片上的迷你图是近一年环节指数"))}</span>
         <span class="sec-rule"></span>
       </div>
       <div class="li-flow">
         <div class="li-flow-main">
-          ${card("upstream_lithium")}${arrow}${card("precursor")}${arrow}
-          <div class="li-mats">${["cathode", "anode", "separator", "electrolyte"].map(card).join("")}</div>
-          ${arrow}${card("cell")}
+          ${layout.main.map((item) => Array.isArray(item)
+            ? `<div class="li-mats">${item.map(card).join("")}</div>`
+            : card(item)).join(arrow)}
         </div>
-        <div class="li-flow-side">
-          <div class="li-support">
-            <p class="li-side-lbl">${esc(t("li.support", "配套"))}</p>
-            ${card("equipment")}
-          </div>
-          <div class="li-support">
-            <p class="li-side-lbl">${esc(t("li.loopBack", "循环回上游"))} ↩</p>
-            ${card("recycling")}
-          </div>
-        </div>
+        ${layout.side.length ? `<div class="li-flow-side">
+          ${layout.side.map((g) => `<div class="li-support">
+            <p class="li-side-lbl">${esc(t(g.label[0], g.label[1]))}${g.suffix || ""}</p>
+            <div class="li-support-cards">${g.keys.map(card).join("")}</div>
+          </div>`).join("")}
+        </div>` : ""}
       </div>
     </section>
 
     ${priceSec}
 
-    <p class="sec-sub li-src">${esc(t("li.srcNote",
-      "数据来源：东方财富 · akshare（公开行情）· 价格为碳酸锂期货主力（广期所）· 更新 {d}")
-      .replace("{d}", d.generatedAt || "—"))}</p>`;
+    <p class="sec-sub li-src">${esc(srcNote)}</p>`;
 
   // "全部 N 家" 展开/收起：只动本卡片的其余公司列表
   app.querySelector(".li-flow")?.addEventListener("click", (e) => {
@@ -2905,7 +2980,7 @@ async function renderLithiumPage() {
     const open = rest.hidden;
     rest.hidden = !open;
     b.setAttribute("aria-expanded", String(open));
-    b.textContent = open ? t("group.collapse", "收起") : t("li.more", "全部 {n} 家").replace("{n}", b.dataset.n);
+    b.textContent = open ? t("group.collapse", "收起") : t("cboard.more", "全部 {n} 家").replace("{n}", b.dataset.n);
   });
 }
 

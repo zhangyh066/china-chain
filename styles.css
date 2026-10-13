@@ -1424,28 +1424,40 @@ html:not([data-boot="on"]) .boot-console { display: none; }
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 
-/* ---- 锂电产业链看板（#/li） ---- */
-/* 首页入口：一行卡片式链接 */
+/* ---- 产业链看板（#/li、#/pv、#/semi） ---- */
+/* 首页入口：一个区块最多三张卡（标题+sub+箭头），窄屏自动折行 */
 .li-entry-sec { padding: 0; }
+.li-entries {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
 .li-entry {
   display: flex; align-items: baseline; gap: 10px;
   padding: 12px 16px;
   background: var(--surface); border: 1px solid var(--border-strong);
   border-radius: var(--radius); transition: border-color 0.15s ease;
 }
+.li-entry-col { flex-direction: column; align-items: stretch; gap: 6px; }
+.li-entry-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .li-entry:hover { border-color: var(--primary); }
 .li-entry-title { font-weight: 600; color: var(--text); }
 .li-entry-sub { font-size: 12.5px; color: var(--text-faint); flex: 1; }
 .li-entry .arr { color: var(--primary); }
 
-/* 链条流程：主流线横排（上游→前驱体→四大主材→电芯），设备/回收第二排 */
+/* 链条流程：主流线 flex 横排（卡数随链而定，2×2 子格占两份宽），配套/循环第二排 */
 .li-flow-main {
-  display: grid; grid-template-columns: 1fr auto 1fr auto 2fr auto 1fr;
-  gap: 10px; align-items: stretch;
+  display: flex; gap: 10px; align-items: stretch;
 }
+.li-flow-main > .li-card { flex: 1 1 0; }
+.li-flow-main > .li-mats { flex: 2 1 0; }
 .li-flow-side {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px;
   margin-top: 10px;
+}
+.li-support-cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
 }
 .li-arrow {
   align-self: center; color: var(--text-faint);
@@ -1500,12 +1512,13 @@ html:not([data-boot="on"]) .boot-console { display: none; }
 .li-src { margin-top: 4px; }
 
 @media (max-width: 1100px) {
-  .li-flow-main { grid-template-columns: 1fr 1fr; }
+  .li-flow-main { flex-wrap: wrap; }
+  .li-flow-main > .li-card { flex: 1 1 calc(50% - 10px); }
+  .li-flow-main > .li-mats { flex: 1 1 100%; }
   .li-flow-main .li-arrow { display: none; }
-  .li-mats { grid-column: 1 / -1; }
 }
 @media (max-width: 700px) {
-  .li-flow-main { grid-template-columns: 1fr; }
+  .li-flow-main > .li-card { flex: 1 1 100%; }
   .li-mats { grid-template-columns: 1fr; }
   .li-flow-side { grid-template-columns: 1fr; }
 }
