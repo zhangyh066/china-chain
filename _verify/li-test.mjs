@@ -192,6 +192,111 @@ for (const { hash, key } of CHAINS) {
   await shot(`${key}-mobile.png`);
 }
 
+// ---- 概念纯度（照妖镜）：数据驱动断言
+const purity = JSON.parse(readFileSync('data/purity.json', 'utf-8'));
+
+// 1) 锂电看板 cell 阶段卡：公司按纯度降序（首屏前 4 同理），0 垫底带徽章，tooltip 有依据
+await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false });
+await send('Page.navigate', { url: BASE + '?fresh=' + Date.now() + '#/li' });
+await sleep(2600);
+{
+  const cellP = purity.chains?.lithium?.cell || {};
+  const expectOrder = Object.entries(cellP).sort((a, b) => b[1].p - a[1].p).map(([code]) => code);
+  const cellCard = JSON.parse(await evaluate(`JSON.stringify((() => {
+    const card = document.querySelector('.li-card[data-stage="cell"]');
+    if (!card) return null;
+    return {
+      cos: [...card.querySelectorAll('.li-co')].map((a) => a.getAttribute('href').split('/').pop()),
+      pcts: [...card.querySelectorAll('.li-co .li-co-pct')].map((e) => e.textContent),
+      firstTitle: card.querySelector('.li-co')?.getAttribute('title') || null,
+      note: document.querySelector('.purity-note')?.textContent || null,
+    };
+  })())`));
+  check('纯度：cell 阶段卡公司按纯度降序（含「全部 N 家」隐藏的）',
+    !!cellCard && cellCard.cos.join(',') === expectOrder.join(','),
+    cellCard ? cellCard.cos.join(',') : 'no card');
+  const expectPcts = expectOrder.map((c) => (cellP[c].p * 100).toFixed(1) + '%');
+  check('纯度：每家公司带百分比（0 也显示），宁德时代 88.6% 在首屏、比亚迪 0.0% 垫底',
+    !!cellCard && cellCard.pcts.join(',') === expectPcts.join(',')
+      && cellCard.cos.slice(0, 4).includes('300750')
+      && cellCard.pcts[cellCard.pcts.length - 1] === '0.0%'
+      && cellCard.cos[cellCard.cos.length - 1] === '002594',
+    cellCard ? `first4=[${cellCard.cos.slice(0, 4)}] last=${cellCard.pcts[cellCard.pcts.length - 1]}` : '');
+  check('纯度：首家公司 tooltip 是主营构成依据（业务名 + 占比拼接）',
+    !!cellCard && !!cellCard.firstTitle && cellCard.firstTitle.includes('%')
+      && (cellP[expectOrder[0]].items || []).every(([n]) => cellCard.firstTitle.includes(n)),
+    cellCard?.firstTitle);
+  check('纯度：链条页有口径说明（含报告期）',
+    !!cellCard && !!cellCard.note && cellCard.note.includes(purity.period), cellCard?.note);
+}
+
+// 2) 行业页环节筛选：徽章 + 「纯度」排序 chip + 口径说明；取消筛选后全部消失
+{
+  // 选一个纯度覆盖高的环节：「光伏概念」成员的众数行业
+  const graph = JSON.parse(readFileSync('data/graph.json', 'utf-8'));
+  const idx = JSON.parse(readFileSync('data/index.json', 'utf-8'));
+  const BOARD = '光伏概念';
+  const bi = graph.boardList.indexOf(BOARD);
+  const indOf = new Map(idx.companies.map((c) => [c.ticker, c.industry]));
+  const freq = new Map();
+  for (const [tk, bis] of Object.entries(graph.boardIdxOf)) {
+    if (!bis.includes(bi)) continue;
+    const v = indOf.get(tk);
+    if (v) freq.set(v, (freq.get(v) || 0) + 1);
+  }
+  const ind = [...freq.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  const members = (graph.industries[ind] || []).filter((tk) => (graph.boardIdxOf[tk] || []).includes(bi));
+  const pOf = (tk) => purity.boards?.[BOARD]?.[tk];
+
+  if (!ind || !members.length || !purity.boards?.[BOARD]) {
+    check('纯度：行业页环节筛选（找不到有覆盖的环节，条件跳过）', true, 'no sample');
+  } else {
+    await send('Page.navigate', { url: BASE + '?fresh=' + Date.now() + '#/i/' + encodeURIComponent(ind) });
+    await sleep(2600);
+    await evaluate(`document.querySelector('#ind-chains [data-chain="${BOARD}"]')?.click()`);
+    await sleep(400);
+    const f = JSON.parse(await evaluate(`JSON.stringify({
+      sortChips: [...document.querySelectorAll('#ind-toolbar [data-sort]')].map((b) => b.dataset.sort),
+      badges: document.querySelectorAll('#ind-list .purity-badge').length,
+      note: document.querySelector('#ind-list .purity-note')?.textContent || null,
+      cards: document.querySelectorAll('#ind-list .card').length,
+    })`));
+    // 首屏 60 家里 boards 有键的都该有徽章（0 也是有效值）
+    const expectBadges = members.slice(0, 60).filter((tk) => typeof pOf(tk) === 'number').length;
+    check(`纯度：行业页「${ind}」×「${BOARD}」——出现纯度排序 chip + 徽章数匹配 + 口径说明`,
+      f.sortChips.includes('purity') && f.sortChips.length === 5
+        && f.badges === expectBadges
+        && !!f.note && f.note.includes(purity.period),
+      `chips=${f.sortChips} badges=${f.badges}/${expectBadges} cards=${f.cards}`);
+
+    await evaluate(`document.querySelector('#ind-toolbar [data-sort="purity"]')?.click()`);
+    await sleep(400);
+    const s2 = JSON.parse(await evaluate(`JSON.stringify({
+      first: document.querySelector('#ind-list .card .card-ticker')?.textContent,
+      pcts: [...document.querySelectorAll('#ind-list .purity-badge')]
+        .map((b) => parseFloat(b.textContent.replace(/[^0-9.]/g, ''))),
+    })`));
+    const expectFirst = [...members].sort((a, b) => {
+      const va = pOf(a), vb = pOf(b);
+      return (vb ?? -1) - (va ?? -1);
+    })[0];
+    check('纯度：按纯度排序后第一张卡是纯度最高者，徽章序列降序',
+      s2.first === expectFirst
+        && s2.pcts.every((v, i, a) => i === 0 || a[i - 1] >= v),
+      `first=${s2.first} expect=${expectFirst} top=${s2.pcts.slice(0, 3).join('/')}`);
+
+    await evaluate(`document.querySelector('#ind-chains [data-chain=""]')?.click()`);
+    await sleep(400);
+    const f2 = JSON.parse(await evaluate(`JSON.stringify({
+      sortChips: [...document.querySelectorAll('#ind-toolbar [data-sort]')].map((b) => b.dataset.sort),
+      badges: document.querySelectorAll('#ind-list .purity-badge').length,
+    })`));
+    check('纯度：取消环节筛选后纯度 chip 与徽章消失（回落 4 个排序 chip）',
+      !f2.sortChips.includes('purity') && f2.sortChips.length === 4 && f2.badges === 0,
+      JSON.stringify(f2));
+  }
+}
+
 // ---- 首页入口：三张卡，标题来自各链 JSON，指向 #/li、#/pv、#/semi
 await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false });
 await send('Page.navigate', { url: BASE + '?fresh=' + Date.now() + '#/' });

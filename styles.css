@@ -1384,6 +1384,24 @@ html:not([data-boot="on"]) .boot-console { display: none; }
 /* 三个榜单的口径说明：紧跟标题的一小行 muted 文字 */
 .trend-note { margin: 10px 0 2px; max-width: 72em; }
 .trank-note, .btemp-note { margin: -4px 0 10px; max-width: 72em; }
+
+/* 概念纯度徽章：0 灰化（有效值——蹭概念信号），高纯度用强调色 */
+.purity-badge {
+  font-family: var(--mono); font-size: 11px; padding: 0 6px;
+  color: var(--text-faint); border: 1px solid var(--border);
+  border-radius: var(--radius); white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.purity-badge.is-high { color: var(--primary); border-color: var(--primary); }
+.purity-badge.is-zero { opacity: 0.55; border-style: dashed; }
+.purity-note { margin: 10px 0 0; max-width: 72em; }
+/* 阶段卡公司名旁的纯度百分比 */
+.li-co-pct {
+  font-style: normal; font-family: var(--mono); font-size: 10.5px;
+  color: var(--text-faint); margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.li-co-pct.is-zero { opacity: 0.55; }
 .trank-grid { display: grid; grid-template-columns: 1fr; gap: 6px 28px; }
 @media (min-width: 900px) { .trank-grid { grid-template-columns: 1fr 1fr; } }
 .trank-row { display: flex; align-items: center; gap: 10px; padding: 2px 0; }

@@ -643,6 +643,39 @@ function pickLang(zh, en) {
   return (getLocale() === "en" && en) ? en : (zh || en || "");
 }
 
+/* 概念纯度（照妖镜）：data/purity.json，离线生成。
+   chains[chainKey][stageKey][code] = { p, items:[[业务名, 占比], ...] }（链条看板阶段卡用），
+   boards[板块名][code] = p（行业页环节筛选、公司页环节 chips 用）。
+   0 是有效值（蹭概念信号），不是缺失；404/断网静默 null，全站不渲染任何纯度元素。 */
+let purityPromise = null;
+let purityData = null;
+function loadPurity() {
+  return purityPromise ||= getJSON("./data/purity.json")
+    .then((d) => (purityData = (d && d.chains && d.boards ? d : null)))
+    .catch(() => (purityData = null));
+}
+function chainPurity(chainKey, stageKey, code) {
+  const v = purityData?.chains?.[chainKey]?.[stageKey]?.[code];
+  return v && typeof v.p === "number" ? v : null;
+}
+function boardPurity(boardName, code) {
+  const v = purityData?.boards?.[boardName]?.[code];
+  return typeof v === "number" ? v : null;
+}
+// 徽章：0 灰化（有效值——蹭概念信号），高纯度用强调色
+function purityBadgeHTML(p) {
+  if (p == null) return "";
+  const cls = p === 0 ? " is-zero" : p >= 0.6 ? " is-high" : "";
+  return `<span class="purity-badge${cls}">${esc(t("purity.badge", "纯度 {p}%").replace("{p}", Math.round(p * 100)))}</span>`;
+}
+// 口径说明（行业页环节筛选时、链条看板各有纯度覆盖时各放一处）
+function purityNoteHTML() {
+  if (!purityData) return "";
+  return `<p class="sec-sub purity-note">${esc(t("purity.note",
+    "纯度 = 主营构成中相关业务营收占比（报告期 {period}）；公司未单列该业务则计 0——不等于没有布局。")
+    .replace("{period}", purityData.period || "—"))}</p>`;
+}
+
 /* ---- 行情新鲜度 ------------------------------------------------------------
    indexData.generatedAt 是行情快照的日期。超过 10 天就在公司页标签行和
    首页免责条里挂一枚琥珀色警示——数据还在，但要让人知道它不是新的。 */
@@ -745,6 +778,7 @@ async function route() {
         loadHistory(ticker),        // 近一年收盘价，可能根本没有文件
         // 行业/环节指数（走势图三线对照用；行业可能不在 index.json 就跳过）
         info?.industry ? loadIndustryTrends(info.industry) : Promise.resolve(null),
+        loadPurity(),              // 环节 chips 上的纯度徽章；缺失静默降级
       ]);
       let card = null;
       if (info && info.curated) {
@@ -900,7 +934,7 @@ function changeClass(v) {
   return "flat";
 }
 
-function cardHTML(c, wide = false) {
+function cardHTML(c, wide = false, purity = null) {
   const f = (indexData.quotes || {})[c.ticker];
   const chg = f ? f.changePercent : null;
 
@@ -928,6 +962,7 @@ function cardHTML(c, wide = false) {
         <span class="tag">${esc(t("board." + c.board, c.board))}</span>
         ${c.boardCount ? `<span class="tag">${esc(fmtInt(c.boardCount))} ${esc(t("card.chains", "条产业链"))}</span>` : ""}
         ${c.curated ? `<span class="tag tag-chain">${esc(t("card.curated", "手工梳理"))}</span>` : ""}
+        ${purityBadgeHTML(purity)}
       </div>
       ${nums}
       ${peers}
@@ -1576,6 +1611,10 @@ function indFiltered(ind) {
   if (indSort !== "default") {
     const q = indexData?.quotes || {};
     const valOf = (c) => {
+      if (indSort === "purity") {
+        // 环节筛选激活时才有意义；0 是有效值（蹭概念），只把"没数据"的沉底
+        return indSelChain ? boardPurity(indSelChain, c.ticker) : null;
+      }
       const f = q[c.ticker];
       if (!f) return null;
       if (indSort === "chg") return typeof f.changePercent === "number" ? f.changePercent : null;
@@ -1599,8 +1638,11 @@ function indListHTML(ind) {
   if (!list.length) return `<p class="empty">${esc(t("ind.none", "这个条件下没有公司，换个环节或清掉筛选试试。"))}</p>`;
   const shown = list.slice(0, indLimit);
   const more = list.length - shown.length;
-  return `<div class="card-grid ${settings.width === "wide" ? "wide" : ""}">`
-    + shown.map((c) => cardHTML(c)).join("")
+  // 环节筛选激活且该环节有纯度数据：卡片带纯度徽章 + 口径说明
+  const purityOn = !!(indSelChain && purityData?.boards?.[indSelChain]);
+  return (purityOn ? purityNoteHTML() : "")
+    + `<div class="card-grid ${settings.width === "wide" ? "wide" : ""}">`
+    + shown.map((c) => cardHTML(c, false, purityOn ? boardPurity(indSelChain, c.ticker) : null)).join("")
     + `</div>`
     + (more > 0
       ? `<div class="more-row">
@@ -1632,6 +1674,9 @@ function refreshIndList() {
   document.querySelectorAll("#ind-toolbar [data-sort]").forEach((b) => {
     b.setAttribute("aria-pressed", String(b.dataset.sort === indSort));
   });
+  // 环节筛选切换可能增删「纯度」chip（当前环节无纯度数据时不提供该排序）
+  const sc = document.getElementById("ind-sort-chips");
+  if (sc) sc.innerHTML = indSortChipsHTML();
 }
 
 // 触发浏览器下载（CSV / PNG 共用）
@@ -1754,14 +1799,28 @@ function indTrendHTML(ind, trend, dist) {
   });
 }
 
+// 行业页排序 chips：「纯度」只在环节筛选激活且该环节有纯度数据时出现
+// （不破坏无筛选时的 4-chip 布局）；refreshIndList 会随环节切换重绘它
+function indSortChipsHTML() {
+  return [
+    ["default", t("ind.sort.default", "默认")],
+    ["chg", t("ind.sort.chg", "涨幅")],
+    ["cap", t("ind.sort.cap", "市值")],
+    ["name", t("ind.sort.name", "名称")],
+  ].concat(indSelChain && purityData?.boards?.[indSelChain]
+    ? [["purity", t("ind.sort.purity", "纯度")]] : [])
+    .map(([v, label]) => `<button class="chip" type="button" data-sort="${v}" aria-pressed="${indSort === v}">${esc(label)}</button>`).join("");
+}
+
 async function renderIndustryPage(ind) {
   app.innerHTML = "";
   startLoading();
-  // 走势数据单独挂 indTrends，不占解构位。
+  // 走势数据单独挂 indTrends，不占解构位；纯度数据挂模块级 purityData（缺失静默降级）
   let indTrends = null;
   const [g, chain] = await Promise.all([
     loadGraph(), loadChainData(),
     loadIndustryTrends(ind).then((d) => { indTrends = d; }),
+    loadPurity(),
   ]);
   if (parseRoute().name !== "industry") return;
   stopLoading();
@@ -1792,12 +1851,6 @@ async function renderIndustryPage(ind) {
   const marketChips = [`<button class="chip" type="button" data-market="" aria-pressed="${indSelMarket === null}">${esc(t("filter.boardAll", "全部板块"))}</button>`]
     .concat(markets.map((b) => `<button class="chip" type="button" data-market="${esc(b)}" aria-pressed="${indSelMarket === b}">${esc(t("board." + b, b))}</button>`))
     .join("");
-  const sortChips = [
-    ["default", t("ind.sort.default", "默认")],
-    ["chg", t("ind.sort.chg", "涨幅")],
-    ["cap", t("ind.sort.cap", "市值")],
-    ["name", t("ind.sort.name", "名称")],
-  ].map(([v, label]) => `<button class="chip" type="button" data-sort="${v}" aria-pressed="${indSort === v}">${esc(label)}</button>`).join("");
 
   app.innerHTML = `
     <div class="crumb"><a href="#/"><span class="arr" aria-hidden="true">←</span> ${esc(t("crumb.home", "全部行业"))}</a></div>
@@ -1849,7 +1902,7 @@ async function renderIndustryPage(ind) {
         <span class="toolbar-sep" aria-hidden="true"></span>
         <span class="sec-sub">${esc(t("filter.board", "板块"))}</span>${marketChips}
         <span class="toolbar-sep" aria-hidden="true"></span>
-        <span class="sec-sub">${esc(t("ind.sortLabel", "排序"))}</span>${sortChips}
+        <span class="sec-sub">${esc(t("ind.sortLabel", "排序"))}</span><span id="ind-sort-chips">${indSortChipsHTML()}</span>
         <span class="toolbar-sep" aria-hidden="true"></span>
         <button class="chip" id="ind-csv" type="button">${esc(t("ind.exportCsv", "导出 CSV"))}</button>
       </div>
@@ -1862,6 +1915,8 @@ async function renderIndustryPage(ind) {
     const btn = e.target.closest("[data-chain]");
     if (!btn) return;
     indSelChain = btn.dataset.chain === "" ? null : btn.dataset.chain;
+    // 新环节没有纯度数据时，「纯度」排序失去意义，回落默认序
+    if (indSort === "purity" && !(indSelChain && purityData?.boards?.[indSelChain])) indSort = "default";
     indLimit = IND_STEP;
     refreshIndList();
     syncIndTrendSel();
@@ -2819,7 +2874,7 @@ function companyTrendInnerHTML() {
   }
   const chips = segs.length ? `<div class="toolbar hist-segs">
       <span class="sec-sub">${esc(t("hist.segLabel", "环节"))}</span>
-      ${segs.map((s) => `<button class="chip" type="button" data-hseg="${esc(s)}" aria-pressed="${s === seg}">${esc(s)}</button>`).join("")}
+      ${segs.map((s) => `<button class="chip" type="button" data-hseg="${esc(s)}" aria-pressed="${s === seg}">${esc(s)}${purityBadgeHTML(boardPurity(s, a.ticker))}</button>`).join("")}
     </div>` : "";
   return trendChartHTML({
     series, dates,
@@ -2913,8 +2968,16 @@ function sparkSVG(vals, W = 168, H = 36) {
     + `<path d="${d}" fill="none" stroke="${line}" stroke-width="1.2" stroke-linejoin="round" /></svg>`;
 }
 
-function liStageCard(s, vals) {
-  const companies = Array.isArray(s.companies) ? s.companies : [];
+function liStageCard(s, vals, chainKey) {
+  // 公司按纯度降序（null=没数据，沉底；0 是有效值，排在正数之后）——纯度高的更值得代表
+  const companies = (Array.isArray(s.companies) ? [...s.companies] : []).sort((a, b) => {
+    const pa = chainKey ? chainPurity(chainKey, s.key, a.code)?.p : null;
+    const pb = chainKey ? chainPurity(chainKey, s.key, b.code)?.p : null;
+    if (pa == null && pb == null) return 0;
+    if (pa == null) return 1;
+    if (pb == null) return -1;
+    return pb - pa;
+  });
   const usable = Array.isArray(vals) && vals.length >= 20;
   const name = pickLang(s.name, s.nameEn);
   const desc = pickLang(s.desc, s.descEn);
@@ -2930,7 +2993,16 @@ function liStageCard(s, vals) {
   } else {
     trendRow = `<p class="li-pending">${esc(t("cboard.pending", "数据补齐中"))}</p>`;
   }
-  const co = (c) => `<a class="li-co" href="#/c/${encodeURIComponent(c.code)}">${esc(c.name)}</a>`;
+  const co = (c) => {
+    const cp = chainKey ? chainPurity(chainKey, s.key, c.code) : null;
+    const pct = cp ? `<em class="li-co-pct${cp.p === 0 ? " is-zero" : ""}">${(cp.p * 100).toFixed(1)}%</em>` : "";
+    const tip = cp
+      ? (Array.isArray(cp.items) && cp.items.length
+          ? cp.items.map(([n, r]) => `${n} ${(r * 100).toFixed(1)}%`).join(" + ")
+          : t("purity.zeroHint", "主营构成未单列该业务，计 0"))
+      : "";
+    return `<a class="li-co" href="#/c/${encodeURIComponent(c.code)}"${tip ? ` title="${esc(tip)}"` : ""}>${esc(c.name)}${pct}</a>`;
+  };
   const first = companies.slice(0, 4), rest = companies.slice(4);
   return `<div class="li-card${usable ? "" : " is-pending"}" data-stage="${esc(s.key)}">
       <div class="li-card-head">
@@ -2951,7 +3023,7 @@ function liStageCard(s, vals) {
 async function renderChainPage(chainKey) {
   app.innerHTML = "";
   startLoading();
-  const [d, price] = await Promise.all([loadChainBoard(chainKey), loadChainPrice(chainKey)]);
+  const [d, price] = await Promise.all([loadChainBoard(chainKey), loadChainPrice(chainKey), loadPurity()]);
   const r = parseRoute();
   if (r.name !== "chain" || r.chainKey !== chainKey) return;
   stopLoading();
@@ -2962,7 +3034,7 @@ async function renderChainPage(chainKey) {
   }
   const byKey = new Map(d.stages.map((s) => [s.key, s]));
   const trends = (d.trends && d.trends.stages) || {};
-  const card = (k) => (byKey.has(k) ? liStageCard(byKey.get(k), trends[k]) : "");
+  const card = (k) => (byKey.has(k) ? liStageCard(byKey.get(k), trends[k], chainKey) : "");
   const arrow = `<span class="li-arrow" aria-hidden="true">→</span>`;
   const layout = CHAIN_LAYOUTS[chainKey]
     || { main: d.stages.map((s) => s.key), side: [] };
@@ -3010,6 +3082,7 @@ async function renderChainPage(chainKey) {
           </div>`).join("")}
         </div>` : ""}
       </div>
+      ${purityData?.chains?.[chainKey] ? purityNoteHTML() : ""}
     </section>
 
     ${priceSec}

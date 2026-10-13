@@ -16,9 +16,10 @@
   --refresh       透传给支持它的子脚本（fetch_real.py 删行情缓存重拉、
                   fetch_history.py 无视缓存重抓；其余脚本本来就不吃这个参数）
 
-末尾固定追加两步：build_trends.py（日线 → 行业/环节趋势指数，仅当 data/h/
-目录存在时跑）与 build_chains.py（锂电/光伏/半导体产业链深耕产物，仅当
-data/p/ 存在时跑）——依赖未就绪就跳过，不算失败。
+末尾固定追加三步（依赖未就绪就跳过，不算失败）：build_trends.py（日线 →
+行业/环节趋势指数，仅当 data/h/ 存在时跑）、build_chains.py（产业链深耕
+产物，仅当 data/p/ 存在时跑）、build_purity.py（概念纯度，离线，仅当
+data/p/ 存在时跑，读当轮 chain 产物）。
 
 用法：
   python run_all.py                  # 六步，增量（有缓存的自动跳过联网）
@@ -41,6 +42,7 @@ STEPS = [
     ("fabricate_chains.py", False),
 ]
 HISTORY_STEP = ("fetch_history.py", True)
+PURITY_STEP = ("build_purity.py", False)
 TRENDS_STEP = ("build_trends.py", False)
 CHAINS_STEP = ("build_chains.py", False)
 
@@ -74,9 +76,10 @@ def main():
             print(f"\n[FAIL] 第 {i}/{len(steps)} 步中断，总耗时 {(time.time()-t0)/60:.1f} 分钟")
             return rc
 
-    # 趋势指数依赖 data/h/ 日线：抓过才跑，没抓过就跳过（不算失败）
+    # 概念纯度（离线，依赖 data/p + graph.json + 当轮 chain 产物）：放在 chains 之后
     n_steps = len(steps)
-    if os.path.isdir(os.path.join(os.path.dirname(HERE), "data", "h")):
+    data_dir = os.path.join(os.path.dirname(HERE), "data")
+    if os.path.isdir(os.path.join(data_dir, "h")):
         rc = run(TRENDS_STEP[0], [])
         n_steps += 1
         if rc:
@@ -87,7 +90,7 @@ def main():
               "（先跑 --with-history 抓日线）", flush=True)
 
     # 产业链深耕产物依赖 data/p/ 公司档案：有档案才跑，缺了跳过（不算失败）
-    if os.path.isdir(os.path.join(os.path.dirname(HERE), "data", "p")):
+    if os.path.isdir(os.path.join(data_dir, "p")):
         rc = run(CHAINS_STEP[0], [])
         n_steps += 1
         if rc:
@@ -96,6 +99,16 @@ def main():
     else:
         print("\n-- 跳过 build_chains.py：data/p/ 不存在"
               "（先跑前五步生成公司档案）", flush=True)
+
+    # 概念纯度（离线，依赖 data/p + graph.json + 当轮 chain 产物）：data/p 在才跑
+    if os.path.isdir(os.path.join(data_dir, "p")):
+        rc = run(PURITY_STEP[0], [])
+        n_steps += 1
+        if rc:
+            print(f"\n[FAIL] build_purity.py 中断，总耗时 {(time.time()-t0)/60:.1f} 分钟")
+            return rc
+    else:
+        print("\n-- 跳过 build_purity.py：data/p/ 不存在", flush=True)
 
     print(f"\n[ok] {n_steps} 步全部完成，总耗时 {(time.time()-t0)/60:.1f} 分钟")
     return 0
