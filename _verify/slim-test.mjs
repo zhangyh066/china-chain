@@ -186,15 +186,15 @@ await navigate(BASE + '#/vision');
 const visionLen = await waitFor(`(document.querySelector('#app h2, #app h1')?.textContent || '').length > 0`, 15000);
 check('观点页 markdown 渲染', visionLen === true);
 
-console.log('— 页脚链接（观点降级 + 数据纠错）—');
+console.log('— 页脚链接（观点入口 + 数据纠错）—');
 const foot = JSON.parse(await evaluate(`JSON.stringify({
   links: !!document.getElementById('footer-links'),
   feedback: !!document.querySelector('#footer-links a[href*="issues/new/choose"]'),
   feedbackText: (document.getElementById('footer-links')?.textContent || '').includes('数据纠错'),
   visionLink: !!document.querySelector('#footer-links a[href="#/vision"]'),
-  navVisionGone: !document.getElementById('nav-vision')
+  navVision: (document.getElementById('nav-vision')?.getAttribute('href') || '')
 })`));
-check('顶栏已撤下观点链接', foot.navVisionGone === true);
+check('顶栏含"我们的观点"链接（#/vision）', foot.navVision === '#/vision');
 check('页脚含"数据纠错"链接（GitHub issues）', foot.feedback && foot.feedbackText);
 check('页脚含"我们的观点"链接', foot.visionLink === true);
 
