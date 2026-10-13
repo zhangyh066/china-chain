@@ -702,6 +702,16 @@ function purityNoteHTML() {
     .replace("{period}", purityData.period || "—"))}</p>`;
 }
 
+/* 传导视图：data/transmission.json，离线生成（源头 vs 各环节的日收益交叉相关）。
+   只有 source.type=="price" 的链渲染（其余链 lag 全 0，没有信息量）；404/断网静默 null。 */
+let transmPromise = null;
+let transmData = null;
+function loadTransmission() {
+  return transmPromise ||= getJSON("./data/transmission.json")
+    .then((d) => (transmData = (d && d.chains ? d : null)))
+    .catch(() => (transmData = null));
+}
+
 /* ---- 行情新鲜度 ------------------------------------------------------------
    indexData.generatedAt 是行情快照的日期。超过 10 天就在公司页标签行和
    首页免责条里挂一枚琥珀色警示——数据还在，但要让人知道它不是新的。 */
@@ -2995,6 +3005,96 @@ function sparkSVG(vals, W = 168, H = 36) {
     + `<path d="${d}" fill="none" stroke="${line}" stroke-width="1.2" stroke-linejoin="round" /></svg>`;
 }
 
+/* 传导视图：源头价格（顶部）vs 各环节指数（按链条 stages 序）同一根时间轴上下排开，
+   看运动沿链传导。各行 SVG 共享 viewBox 宽度与左右内边距 → x 严格对齐（波峰对波峰）；
+   y 各自归一（读形不读值）。线宽随 |r| 加粗；弱信号（数据标 weak 或 |r|<0.2）标注灰化。
+   悬停联动在 renderChainPage 接线：所有行同一日期位置出竖直参考线。 */
+const TM_W = 720, TM_PL = 8, TM_PR = 10;
+function tmLinePath(vals, H) {
+  const n = vals.length;
+  let min = Infinity, max = -Infinity;
+  vals.forEach((v) => { if (v < min) min = v; if (v > max) max = v; });
+  const span = max - min || 1;
+  const x = (i) => TM_PL + (i / (n - 1)) * (TM_W - TM_PL - TM_PR);
+  const y = (v) => 5 + (1 - (v - min) / span) * (H - 10);
+  let d = "";
+  vals.forEach((v, i) => { d += `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`; });
+  return { d, area: `${d}L${x(n - 1).toFixed(1)} ${H - 5}L${x(0).toFixed(1)} ${H - 5}Z` };
+}
+function transmissionHTML(chainKey, d, tm, price) {
+  const trends = d.trends?.stages || {};
+  const dates = d.trends?.dates || [];
+  const pts = Array.isArray(price?.points) ? price.points : [];
+  const rows = d.stages
+    .filter((s) => tm.stages?.[s.key] && Array.isArray(trends[s.key]) && trends[s.key].length >= 20)
+    .map((s) => ({ s, st: tm.stages[s.key], vals: trends[s.key] }));
+  if (!rows.length || pts.length < 20 || dates.length < 20) return "";
+
+  // 源头价格行：加粗 + 面积渐变，担任视觉锚点；行尾是最新价与近一年涨跌
+  const pv = pts.map((p) => p[1]);
+  const src = tmLinePath(pv, 92);
+  const srcUp = pv[pv.length - 1] >= pv[0];
+  const srcColor = cssVar(srcUp ? "--rise" : "--fall", srcUp ? "#F6465D" : "#2FB67C");
+  const srcPct = pv[0] ? (pv[pv.length - 1] / pv[0] - 1) * 100 : null;
+  const gid = `tm-grad-${chainKey}`;
+  const srcRow = `<div class="tm-row tm-src" data-tm-row data-tm-src="1">
+      <div class="tm-row-lbl">
+        <span class="tm-name">${esc(pickLang(price.name, price.nameEn))}</span><i class="tm-src-tag">${esc(t("tm.srcTag", "源头"))}</i>
+        <em class="tm-hover-date" hidden></em>
+        <em class="tm-stat">${esc(fmtInt(pv[pv.length - 1]))} · <b class="${changeClass(srcPct)}">${esc(fmtPct(srcPct))}</b></em>
+      </div>
+      <svg class="tm-svg" viewBox="0 0 ${TM_W} 92" preserveAspectRatio="none" aria-hidden="true">
+        <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="${srcColor}" stop-opacity="0.24" />
+          <stop offset="1" stop-color="${srcColor}" stop-opacity="0.02" />
+        </linearGradient></defs>
+        <path d="${src.area}" fill="url(#${gid})" />
+        <path d="${src.d}" fill="none" stroke="${srcColor}" stroke-width="1.8" stroke-linejoin="round" />
+      </svg>
+      <i class="tm-cursor" hidden></i>
+    </div>`;
+
+  const stageRow = ({ s, st, vals }) => {
+    const line = tmLinePath(vals, 44);
+    const up = vals[vals.length - 1] >= vals[0];
+    const color = cssVar(up ? "--rise" : "--fall", up ? "#F6465D" : "#2FB67C");
+    const weak = !!st.weak || Math.abs(st.r) < 0.2;
+    const lagTxt = st.lag > 0 ? t("tm.lead", "领先 {n} 日").replace("{n}", st.lag)
+      : st.lag < 0 ? t("tm.lag", "滞后 {n} 日").replace("{n}", -st.lag)
+      : t("tm.sameDay", "同日");
+    // r 的视觉强度：线宽 1.1（r=0）~ 2.5（r=1），弱信号再压透明度
+    const w = (1.1 + Math.abs(st.r) * 1.4).toFixed(2);
+    return `<div class="tm-row" data-tm-row data-stage="${esc(s.key)}">
+      <div class="tm-row-lbl">
+        <span class="tm-name">${esc(pickLang(s.name, s.nameEn))}</span>
+        <em class="tm-stat${weak ? " is-weak" : ""}">r=${st.r.toFixed(2)} · ${esc(lagTxt)}</em>
+      </div>
+      <svg class="tm-svg" viewBox="0 0 ${TM_W} 44" preserveAspectRatio="none" aria-hidden="true">
+        <path d="${line.d}" fill="none" stroke="${color}" stroke-width="${w}"
+              stroke-opacity="${weak ? 0.6 : 1}" stroke-linejoin="round" />
+      </svg>
+      <i class="tm-cursor" hidden></i>
+    </div>`;
+  };
+
+  const minN = Math.min(...rows.map((r) => (typeof r.st.n === "number" ? r.st.n : Infinity)));
+  return `
+    <section class="sec transm">
+      <div class="sec-head">
+        <h2 class="sec-title">${esc(t("tm.title", "传导视图"))}</h2>
+        <span class="sec-sub">${esc(t("tm.sub", "源头价格与各环节指数同一根时间轴（近一年）——看运动怎么沿链传导"))}</span>
+        <span class="sec-rule"></span>
+      </div>
+      <div class="tm-rows" data-tm-n="${dates.length}">
+        ${srcRow}
+        ${rows.map(stageRow).join("")}
+      </div>
+      <p class="sec-sub tm-note">${esc(t("tm.note",
+        "日收益率交叉相关（滞后 -10 ~ +20 个交易日，n={n}）。相关不等于因果；|r|<0.2 视为弱信号。")
+        .replace("{n}", fmtInt(Number.isFinite(minN) ? minN : 0)))}</p>
+    </section>`;
+}
+
 function liStageCard(s, vals, chainKey) {
   // 公司按纯度降序（p 主序、提及 m 次序；null=没数据，沉底）——纯度高的更值得代表
   const companies = (Array.isArray(s.companies) ? [...s.companies] : []).sort((a, b) => {
@@ -3061,7 +3161,7 @@ function liStageCard(s, vals, chainKey) {
 async function renderChainPage(chainKey) {
   app.innerHTML = "";
   startLoading();
-  const [d, price] = await Promise.all([loadChainBoard(chainKey), loadChainPrice(chainKey), loadPurity()]);
+  const [d, price] = await Promise.all([loadChainBoard(chainKey), loadChainPrice(chainKey), loadPurity(), loadTransmission()]);
   const r = parseRoute();
   if (r.name !== "chain" || r.chainKey !== chainKey) return;
   stopLoading();
@@ -3077,10 +3177,15 @@ async function renderChainPage(chainKey) {
   const layout = CHAIN_LAYOUTS[chainKey]
     || { main: d.stages.map((s) => s.key), side: [] };
 
+  // 传导视图只服务源头是期货价格的链（其余链 lag 全 0 没有信息量）；
+  // 它顶部就是价格线，在场时替代独立价格图区块，避免重复
+  const tm = transmData?.chains?.[chainKey];
+  const tmSec = tm?.source?.type === "price" ? transmissionHTML(chainKey, d, tm, price) : "";
+
   // 价格名：数据文件自带（暂无英文名字段，EN 环境也展示中文合约名）
   const priceName = price ? pickLang(price.name, price.nameEn) : "";
   const priceLast = price ? price.points[price.points.length - 1] : null;
-  const priceSec = price ? histHTML({ points: price.points }, {
+  const priceSec = !tmSec && price ? histHTML({ points: price.points }, {
     title: priceName,
     sub: t("cboard.priceSub", "广期所 · 近一年日线 · 最新 {p}")
       .replace("{p}", priceLast ? fmtInt(priceLast[1]) : "—"),
@@ -3123,7 +3228,7 @@ async function renderChainPage(chainKey) {
       ${purityData?.chains?.[chainKey] ? purityNoteHTML() : ""}
     </section>
 
-    ${priceSec}
+    ${tmSec || priceSec}
 
     <p class="sec-sub li-src">${esc(srcNote)}</p>`;
 
@@ -3138,6 +3243,30 @@ async function renderChainPage(chainKey) {
     b.setAttribute("aria-expanded", String(open));
     b.textContent = open ? t("group.collapse", "收起") : t("cboard.more", "全部 {n} 家").replace("{n}", b.dataset.n);
   });
+
+  // 传导视图：悬停任一行，所有行同一日期位置出竖直参考线（同步 crosshair）
+  const tmRows = app.querySelector(".tm-rows");
+  if (tmRows) {
+    const dates = d.trends?.dates || [];
+    const n = Number(tmRows.dataset.tmN) || dates.length;
+    const cursors = [...tmRows.querySelectorAll(".tm-cursor")];
+    const dateEl = tmRows.querySelector(".tm-hover-date");
+    tmRows.addEventListener("pointermove", (e) => {
+      const rect = tmRows.getBoundingClientRect();
+      if (!rect.width || n < 2) return;
+      const fx = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+      // 折线有效区是 viewBox 的 [TM_PL, TM_W-TM_PR]，按行宽换算成日期下标
+      const pf = clamp((fx * TM_W - TM_PL) / (TM_W - TM_PL - TM_PR), 0, 1);
+      const i = Math.round(pf * (n - 1));
+      const left = (fx * 100).toFixed(2) + "%";
+      cursors.forEach((c) => { c.hidden = false; c.style.left = left; });
+      if (dateEl && dates[i]) { dateEl.hidden = false; dateEl.textContent = dates[i]; }
+    });
+    tmRows.addEventListener("pointerleave", () => {
+      cursors.forEach((c) => { c.hidden = true; });
+      if (dateEl) dateEl.hidden = true;
+    });
+  }
 }
 
 function renderCompany(data) {

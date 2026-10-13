@@ -1405,6 +1405,36 @@ html:not([data-boot="on"]) .boot-console { display: none; }
 }
 .li-co-pct.is-mentioned { color: var(--text-soft); }
 .li-co-pct.is-none { opacity: 0.55; }
+
+/* 传导视图：源头价格 + 各环节指数共享时间轴纵向排开；行间虚线分隔，
+   .tm-cursor 是悬停时的竖直参考线（JS 同步所有行的 left） */
+.tm-rows { margin-top: 12px; display: flex; flex-direction: column; }
+.tm-row { position: relative; padding: 6px 0 4px; }
+.tm-row + .tm-row { border-top: 1px dashed var(--border); }
+.tm-row-lbl {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  font-size: 12.5px; color: var(--text-soft); margin-bottom: 2px;
+}
+.tm-name { font-weight: 600; color: var(--text); }
+.tm-src-tag {
+  font-style: normal; font-size: 10px; padding: 0 5px;
+  color: var(--primary); border: 1px solid var(--primary);
+  border-radius: var(--radius); white-space: nowrap;
+}
+.tm-stat {
+  margin-left: auto; font-style: normal; font-family: var(--mono);
+  font-size: 11px; color: var(--text-faint); white-space: nowrap;
+}
+.tm-stat b { font-weight: 600; }
+.tm-stat.is-weak { opacity: 0.55; }
+.tm-hover-date { font-style: normal; font-family: var(--mono); font-size: 11px; color: var(--primary); }
+.tm-svg { display: block; width: 100%; height: 44px; }
+.tm-src .tm-svg { height: 92px; }
+.tm-cursor {
+  position: absolute; top: 0; bottom: 0; width: 1px;
+  background: var(--text-faint); opacity: 0.7; pointer-events: none;
+}
+.tm-note { margin: 10px 0 0; max-width: 72em; }
 .trank-grid { display: grid; grid-template-columns: 1fr; gap: 6px 28px; }
 @media (min-width: 900px) { .trank-grid { grid-template-columns: 1fr 1fr; } }
 .trank-row { display: flex; align-items: center; gap: 10px; padding: 2px 0; }

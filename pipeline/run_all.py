@@ -16,9 +16,10 @@
   --refresh       透传给支持它的子脚本（fetch_real.py 删行情缓存重拉、
                   fetch_history.py 无视缓存重抓；其余脚本本来就不吃这个参数）
 
-末尾固定追加三步（依赖未就绪就跳过，不算失败）：build_trends.py（日线 →
+末尾固定追加四步（依赖未就绪就跳过，不算失败）：build_trends.py（日线 →
 行业/环节趋势指数，仅当 data/h/ 存在时跑）、build_chains.py（产业链深耕
-产物，仅当 data/p/ 存在时跑）、build_purity.py（概念纯度，离线，仅当
+产物，仅当 data/p/ 存在时跑）、build_transmission.py（传导时滞，离线，
+仅当 data/chain/ 存在时跑）、build_purity.py（概念纯度，离线，仅当
 data/p/ 存在时跑，读当轮 chain 产物）。
 
 用法：
@@ -45,6 +46,7 @@ HISTORY_STEP = ("fetch_history.py", True)
 PURITY_STEP = ("build_purity.py", False)
 TRENDS_STEP = ("build_trends.py", False)
 CHAINS_STEP = ("build_chains.py", False)
+TRANSMISSION_STEP = ("build_transmission.py", False)
 
 
 def run(script, args):
@@ -99,6 +101,16 @@ def main():
     else:
         print("\n-- 跳过 build_chains.py：data/p/ 不存在"
               "（先跑前五步生成公司档案）", flush=True)
+
+    # 传导时滞（离线，依赖 chain 产物与期货价格文件）：data/chain 在才跑
+    if os.path.isdir(os.path.join(data_dir, "chain")):
+        rc = run(TRANSMISSION_STEP[0], [])
+        n_steps += 1
+        if rc:
+            print(f"\n[FAIL] build_transmission.py 中断，总耗时 {(time.time()-t0)/60:.1f} 分钟")
+            return rc
+    else:
+        print("\n-- 跳过 build_transmission.py：data/chain/ 不存在", flush=True)
 
     # 概念纯度（离线，依赖 data/p + graph.json + 当轮 chain 产物）：data/p 在才跑
     if os.path.isdir(os.path.join(data_dir, "p")):

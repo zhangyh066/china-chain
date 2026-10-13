@@ -30,6 +30,8 @@ for (const { key } of CHAINS) {
   const d = existsSync(p) ? JSON.parse(readFileSync(p, 'utf-8')) : null;
   priceData[key] = d && Array.isArray(d.points) && d.points.length >= 20 ? d : null;
 }
+// 传导视图数据：source.type=="price" 的链应渲染传导视图并替代独立价格图
+const tmData = JSON.parse(readFileSync('data/transmission.json', 'utf-8'));
 const stageUsable = (d, s) => {
   const v = d.trends?.stages?.[s.key];
   return Array.isArray(v) && v.length >= 20;
@@ -90,6 +92,10 @@ const STRUCT_EXPR = `JSON.stringify({
   coLinks: document.querySelectorAll('.li-co').length,
   arrows: document.querySelectorAll('.li-arrow').length,
   moreBtns: document.querySelectorAll('[data-li-more]').length,
+  transm: !!document.querySelector('.transm'),
+  tmRows: document.querySelectorAll('.transm .tm-row').length,
+  tmSrc: document.querySelector('.transm .tm-row[data-tm-src] .tm-name')?.textContent || null,
+  tmNames: [...document.querySelectorAll('.transm .tm-row:not([data-tm-src]) .tm-name')].map((e) => e.textContent),
   noHScroll: document.documentElement.scrollWidth <= document.documentElement.clientWidth
 })`;
 
@@ -116,17 +122,26 @@ for (const { hash, key } of CHAINS) {
     st.sparks === expectSpark && st.pending === expectPending
       && st.pendingKeys.sort().join(',') === expectPendingKeys.join(','),
     `sparks=${st.sparks} pending=[${st.pendingKeys.join(',')}]`);
-  if (price) {
+  const tmChain = tmData.chains?.[key];
+  const tmOn = !!(tmChain && tmChain.source?.type === 'price' && price);
+  const tmStageN = tmOn ? d.stages.filter((s) => tmChain.stages[s.key] && stageUsable(d, s)).length : 0;
+  if (tmOn) {
+    check(`[${key}] 传导视图替代独立价格图：首行=价格源头「${price.name}」、环节行 ${tmStageN} 条、来源注记保留`,
+      st.transm && st.tmSrc === price.name && st.tmRows === tmStageN + 1
+        && st.histTitles.length === 0
+        && !!st.src && st.src.includes(`${price.name}（广期所）`) && st.src.includes(d.generatedAt),
+      `rows=${st.tmRows} hist=${st.histTitles.length} src=${st.src}`);
+  } else if (price) {
     check(`[${key}] 价格图（${price.name}）：标题取自 price JSON + 折线/面积 + 来源注记`,
       st.histTitles.includes(price.name) && st.pricePath
         && !!st.histSub && st.histSub.includes('广期所')
         && !!st.src && st.src.includes(`${price.name}（广期所）`) && st.src.includes(d.generatedAt),
       `${st.histTitles.join('|')} / ${st.src}`);
   } else {
-    check(`[${key}] 无 price 文件 → 价格区块不出现，来源注记无价格措辞、含更新日期`,
-      st.histTitles.length === 0
+    check(`[${key}] 无 price 文件 → 价格区块与传导视图都不出现，来源注记无价格措辞、含更新日期`,
+      st.histTitles.length === 0 && !st.transm
         && !!st.src && !st.src.includes('期货') && st.src.includes(d.generatedAt),
-      `hist=${st.histTitles.length} / ${st.src}`);
+      `hist=${st.histTitles.length} transm=${st.transm} / ${st.src}`);
   }
   check(`[${key}] 公司链接 == 各阶段公司总数（${totalCos}），展开按钮 == 公司数>4 的卡数（${expectMore}）`,
     st.coLinks === totalCos && st.moreBtns === expectMore,
@@ -170,7 +185,14 @@ for (const { hash, key } of CHAINS) {
     const pendTxt = await evaluate(`document.querySelector('.li-pending')?.textContent || null`);
     check(`[${key}] EN：「数据补齐中」降级文案已翻译`, pendTxt === 'History still being collected', pendTxt);
   }
-  if (price) {
+  if (tmOn) {
+    check(`[${key}] EN：传导视图在场（合约名仍中文），环节行名走 nameEn、按链条序`,
+      en.transm && en.tmSrc === price.name
+        && en.tmNames.join('|') === d.stages
+          .filter((s) => tmChain.stages[s.key] && stageUsable(d, s))
+          .map((s) => s.nameEn || s.name).join('|'),
+      JSON.stringify({ src: en.tmSrc, first: en.tmNames[0] }));
+  } else if (price) {
     check(`[${key}] EN：价格图标题为合约名，注记为英文（GFEX）`,
       en.histTitles.includes(price.name) && !!en.histSub && en.histSub.includes('GFEX'),
       en.histSub);
@@ -319,6 +341,83 @@ await sleep(2600);
       !f2.sortChips.includes('purity') && f2.sortChips.length === 4 && f2.badges === 0,
       JSON.stringify(f2));
   }
+}
+
+// ---- 传导视图：标注文案与 transmission.json 逐行一致 + crosshair 悬停联动
+const TM_ROWS_EXPR = `JSON.stringify((() => {
+  const sec = document.querySelector('.transm');
+  if (!sec) return null;
+  const rows = [...sec.querySelectorAll('.tm-row')];
+  return {
+    srcFirst: rows[0]?.hasAttribute('data-tm-src') || false,
+    srcName: rows[0]?.querySelector('.tm-name')?.textContent || null,
+    rows: rows.slice(1).map((r) => ({
+      stage: r.dataset.stage || null,
+      name: r.querySelector('.tm-name')?.textContent || '',
+      stat: r.querySelector('.tm-stat')?.textContent || '',
+      weak: !!r.querySelector('.tm-stat.is-weak'),
+    })),
+    note: sec.querySelector('.tm-note')?.textContent || null,
+  };
+})())`;
+const tmLagTxt = (st) => (st.lag > 0 ? `领先 ${st.lag} 日` : st.lag < 0 ? `滞后 ${-st.lag} 日` : '同日');
+{
+  const tmLi = tmData.chains.lithium;
+  const liChain = chainData.lithium;
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false });
+  await send('Page.navigate', { url: BASE + '?fresh=' + Date.now() + '#/li' });
+  await sleep(2600);
+  const tv = JSON.parse(await evaluate(TM_ROWS_EXPR));
+  const expectStages = liChain.stages.filter((s) => tmLi.stages[s.key] && stageUsable(liChain, s));
+  check('传导：lithium 首行是价格源头「碳酸锂期货主力」，环节行按链条 stages 序',
+    !!tv && tv.srcFirst && tv.srcName === '碳酸锂期货主力'
+      && tv.rows.map((r) => r.stage).join(',') === expectStages.map((s) => s.key).join(','),
+    tv ? `src=${tv.srcName} rows=${tv.rows.map((r) => r.stage).join(',')}` : 'no transm');
+  check('传导：每行标注与 transmission.json 一致（r 两位小数 + 同日/领先/滞后）',
+    !!tv && tv.rows.every((r) => {
+      const st = tmLi.stages[r.stage];
+      return st && r.stat === `r=${st.r.toFixed(2)} · ${tmLagTxt(st)}`;
+    }) && tv.rows[0]?.stat === 'r=0.63 · 同日',
+    tv ? tv.rows.map((r) => r.stat).join(' | ') : '');
+  check('传导：口径说明含样本数与弱信号阈值',
+    !!tv && !!tv.note && tv.note.includes('n=249') && tv.note.includes('|r|<0.2'), tv?.note);
+
+  // crosshair：悬停任一行 → 所有行参考线同 x 出现、源头行出日期；移出即隐藏
+  await evaluate(`(() => {
+    const el = document.querySelector('.transm .tm-rows');
+    const rc = el.getBoundingClientRect();
+    el.dispatchEvent(new PointerEvent('pointermove', { clientX: rc.left + rc.width * 0.6, clientY: rc.top + 40, bubbles: true }));
+    return 1;
+  })()`);
+  const ch = JSON.parse(await evaluate(`JSON.stringify({
+    total: document.querySelectorAll('.transm .tm-cursor').length,
+    visible: document.querySelectorAll('.transm .tm-cursor:not([hidden])').length,
+    lefts: [...document.querySelectorAll('.transm .tm-cursor')].map((c) => c.style.left),
+    date: document.querySelector('.transm .tm-hover-date')?.textContent || null,
+  })`));
+  check('传导：悬停联动——全部行参考线同 x 出现，源头行日期标注出现',
+    ch.total > 0 && ch.visible === ch.total && new Set(ch.lefts).size === 1
+      && /^\d{4}-\d{2}-\d{2}$/.test(ch.date || ''),
+    JSON.stringify(ch));
+  await evaluate(`document.querySelector('.transm .tm-rows').dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }))`);
+  const offN = await evaluate(`document.querySelectorAll('.transm .tm-cursor:not([hidden])').length`);
+  check('传导：移出后参考线全部隐藏', offN === 0, String(offN));
+  await shot('tm-li-dark.png');
+}
+
+// pv：lag≠0 的标注（领先/滞后）与弱信号灰化
+{
+  const tmPv = tmData.chains.pv;
+  await send('Page.navigate', { url: BASE + '?fresh=' + Date.now() + '#/pv' });
+  await sleep(2600);
+  const pv = JSON.parse(await evaluate(TM_ROWS_EXPR));
+  const rowOf = (k) => pv?.rows.find((r) => r.stage === k);
+  check('传导：pv 标注 lag——组件「r=0.23 · 领先 12 日」、光伏设备「r=-0.18 · 滞后 6 日」弱信号灰化',
+    !!pv && rowOf('module')?.stat === 'r=0.23 · 领先 12 日'
+      && rowOf('equipment_pv')?.stat === 'r=-0.18 · 滞后 6 日'
+      && rowOf('equipment_pv')?.weak === true,
+    JSON.stringify({ module: rowOf('module')?.stat, eq: rowOf('equipment_pv') }));
+  await shot('tm-pv-dark.png');
 }
 
 // ---- 首页入口：三张卡，标题来自各链 JSON，指向 #/li、#/pv、#/semi
