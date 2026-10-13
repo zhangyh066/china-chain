@@ -8,6 +8,12 @@ segments，分产品口径）中 item 命中该阶段关键词集合的 revenueR
   - 关键词全部经过词汇调查定稿（扫描各阶段成员真实 segment item 后修正），
     定稿依据写在 PURITY 各阶段的注释里。未命中 = 0——这本身就是"蹭概念"
     信号，不粉饰成缺失。
+  - 三档语义：p>0 为披露口径参与；p==0 时用同组关键词在 business+products
+    （len≥2 关键词）与 scope（仅 len≥3 关键词）里做文本提及检测，命中
+    记 m=1（"参与了但没单列披露"），否则 m=0（"没参与"）。scope 阈值更高的
+    依据：全市场实测 2 字词在 scope 中噪音严重（回收 23→126、发电 96→506、
+    软件 135→1228 家），3 字词相对干净（锂电池 38→30、碳酸锂 6→3）；
+    单字别名（钒/酒/乳等）只做 segments 匹配，不进散文检测。
   - 边界冲突"更具体者优先"：同一公司同属一链多个阶段时（如格林美/华友同在前驱体
     与回收），一个 item 只归属列表中更靠前的阶段。PURITY 用有序 list，各链把
     更窄的阶段排前面（precursor 在 cathode 前、poly_silicon 在 cell_pv 前……）。
@@ -19,8 +25,9 @@ segments，分产品口径）中 item 命中该阶段关键词集合的 revenueR
 
 产出：
   data/purity.json  {schemaVersion, generatedAt, period（众数报告期）,
-                     chains:{链:{阶段:{code:{p, items:[[item,ratio],…]}}}},
-                     boards:{板块名:{code:p}}}
+                     chains:{链:{阶段:{code:{p, items, m}}}},
+                     boards:{板块名:{code:p}},
+                     boardsMentioned:{板块名:[code,…]}（仅 p==0 且 m==1）}
                      boards 只存数值控体积；若总大小超 SIZE_CAP 就只存非零。
 
 用法：python build_purity.py
@@ -65,9 +72,10 @@ PURITY = {
         ("equipment", ["锂电设备", "电池设备", "卷绕", "涂布", "化成分容",
                        "锂电池智能装备", "锂电池专用生产设备", "充放电设备"]),
         # 「电池材料及回收、矿产资源」等含回收字样的 item 已先被 recycling 拦截；
-        # bare「锂电池」安全：含它的「锂电池隔膜/智能装备」成员都不在电芯阶段
+        # bare「锂电池」安全：含它的「锂电池隔膜/智能装备」成员都不在电芯阶段；
+        # 「充电电池」专为比亚迪 business「二次充电电池」提及检测补的（segments 无此词）
         ("cell", ["动力电池", "储能电池", "电芯", "电池系统", "锂离子电池",
-                  "消费电池", "消费类电池", "电动汽车类电池", "锂电池"]),
+                  "消费电池", "消费类电池", "电动汽车类电池", "锂电池", "充电电池"]),
     ],
     "pv": [
         ("poly_silicon", ["多晶硅", "硅料"]),          # 实际：高纯多晶硅
@@ -226,15 +234,36 @@ def board_keywords(name):
     return sorted(kws)
 
 
-def load_segments(code, cache={}):
-    """data/p/{code}.json → segments 列表（分产品口径），缓存复用。"""
-    if code not in cache:
+_profiles_cache = {}
+
+
+def load_profile(code):
+    """data/p/{code}.json → (segments, 提及检测文本)。文本 = business+products
+    （主文本，len≥2 关键词）与 scope（样板法律条文，仅 len≥3 关键词）分开存。"""
+    if code not in _profiles_cache:
         try:
             with open(os.path.join(DATA, "p", f"{code}.json"), encoding="utf-8") as f:
-                cache[code] = json.load(f).get("segments") or []
+                d = json.load(f)
         except Exception:
-            cache[code] = []
-    return cache[code]
+            d = {}
+        main = (d.get("business") or "") + "；" + (d.get("products") or "")
+        _profiles_cache[code] = (d.get("segments") or [], main, d.get("scope") or "")
+    return _profiles_cache[code]
+
+
+def is_mentioned(keywords, main_text, scope_text):
+    """文本提及检测：business+products 认 len≥2 关键词；scope 只认 len≥3。
+
+    依据（全市场实测）：2 字词在 scope 里噪音严重——回收 23→126 家、
+    发电 96→506、软件 135→1228；3 字词干净——锂电池 38→30、碳酸锂 6→3。
+    单字符别名（钒/酒/乳等）在散文里一律不算命中（segments 结构化短标签里仍算）。
+    """
+    for kw in keywords:
+        if len(kw) >= 2 and kw in main_text:
+            return True
+        if len(kw) >= 3 and kw in scope_text:
+            return True
+    return False
 
 
 def main():
@@ -242,10 +271,11 @@ def main():
     periods = Counter()
 
     def scan(code, keywords):
-        """返回 (purity, 命中的 [[item, ratio], …])。ratio 原样保留供 tooltip。"""
+        """返回 (purity, 命中 items, mentioned)。m=1：p>0 或文本提及命中。"""
+        segs, main_text, scope_text = load_profile(code)
         hits = []
         total = 0.0
-        for seg in load_segments(code):
+        for seg in segs:
             periods[seg.get("period")] += 1
             item = seg.get("item") or ""
             if any(kw in item for kw in keywords):
@@ -253,7 +283,9 @@ def main():
                 if isinstance(r, (int, float)) and r > 0:
                     hits.append([item, r])
                     total += r
-        return round(min(total, 1.0), 4), hits
+        p = round(min(total, 1.0), 4)
+        m = 1 if (p > 0 or is_mentioned(keywords, main_text, scope_text)) else 0
+        return p, hits, m
 
     # ---- 链条阶段（成员读 data/chain/{key}.json，已建成产物的实际口径）----
     chains_out = {}
@@ -274,7 +306,8 @@ def main():
         acc = {sk: {} for sk in order}
         for code, my_stages in stage_of.items():
             attributed = {sk: [] for sk in my_stages}
-            for seg in load_segments(code):
+            segs, main_text, scope_text = load_profile(code)
+            for seg in segs:
                 periods[seg.get("period")] += 1
                 item = seg.get("item") or ""
                 r = seg.get("revenueRatio")
@@ -286,7 +319,9 @@ def main():
                         break
             for sk in my_stages:
                 p = round(min(sum(r for _, r in attributed[sk]), 1.0), 4)
-                acc[sk][code] = {"p": p, "items": attributed[sk]}
+                m = 1 if (p > 0 or
+                          is_mentioned(kw_of[sk], main_text, scope_text)) else 0
+                acc[sk][code] = {"p": p, "items": attributed[sk], "m": m}
         chains_out[chain_key] = acc
         for st in chain["stages"]:
             sk = st["key"]
@@ -299,21 +334,27 @@ def main():
     with open(os.path.join(DATA, "graph.json"), encoding="utf-8") as f:
         graph = json.load(f)
     boards_out = {}
+    boards_mentioned = {}
     cov_rows = []
     for bname, codes in graph["boards"].items():
         kws = board_keywords(bname)
         entry = {}
+        mentioned_codes = []
         nonzero = 0
         for code in codes:
-            p, _ = scan(code, kws)
+            p, _, m = scan(code, kws)
             entry[code] = p
             nonzero += p > 0
+            if p == 0 and m:
+                mentioned_codes.append(code)
         boards_out[bname] = entry
-        cov_rows.append((bname, len(codes), nonzero))
+        boards_mentioned[bname] = mentioned_codes
+        cov_rows.append((bname, len(codes), nonzero, len(mentioned_codes)))
 
     period = periods.most_common(1)[0][0] if periods else None
     obj = {"schemaVersion": 1, "generatedAt": generated, "period": period,
-           "chains": chains_out, "boards": boards_out}
+           "chains": chains_out, "boards": boards_out,
+           "boardsMentioned": boards_mentioned}
     out_path = os.path.join(DATA, "purity.json")
     payload = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
     if len(payload.encode("utf-8")) > SIZE_CAP:
@@ -331,28 +372,51 @@ def main():
     for ck, sk, name, n, hi, zero in dist_rows:
         print(f"  {ck:<8} {sk:<18} {name:<12} {n:>2} 家 / >0.5: {hi:>2} / =0: {zero:>2}")
 
-    n_cov = sum(1 for _, _, nz in cov_rows if nz > 0)
-    nonzero_counts = sorted(nz for _, _, nz in cov_rows)
+    n_cov = sum(1 for _, _, nz, _ in cov_rows if nz > 0)
+    n_cov_m = sum(1 for _, _, nz, nm in cov_rows if nz > 0 or nm > 0)
+    nonzero_counts = sorted(nz for _, _, nz, _ in cov_rows)
     median_nz = nonzero_counts[len(nonzero_counts) // 2]
-    print(f"\nboards 覆盖率：{n_cov}/{len(cov_rows)} 个板块至少 1 家非零；"
-          f"非零成员数中位 {median_nz}")
-    zero_boards = [b for b, _, nz in cov_rows if nz == 0]
-    print(f"全零板块 {len(zero_boards)} 个：{'、'.join(zero_boards[:20])}"
-          + ("…" if len(zero_boards) > 20 else ""))
+    print(f"\nboards 覆盖率：{n_cov}/{len(cov_rows)} 个板块至少 1 家 p>0；"
+          f"含提及口径 {n_cov_m}/{len(cov_rows)}；非零成员数中位 {median_nz}")
+    zero_boards = [b for b, _, nz, nm in cov_rows if nz == 0 and nm == 0]
+    print(f"p=0 且无人提及的全零板块 {len(zero_boards)} 个："
+          f"{'、'.join(zero_boards[:20])}" + ("…" if len(zero_boards) > 20 else ""))
+
+    # 全表统计：p==0 中 mentioned 占比
+    all_zero, zero_m = 0, 0
+    for acc in chains_out.values():
+        for per in acc.values():
+            for v in per.values():
+                if v["p"] == 0:
+                    all_zero += 1
+                    zero_m += v["m"]
+    b_zero = sum(1 for e in boards_out.values() for p in e.values() if p == 0)
+    b_zero_m = sum(len(v) for v in boards_mentioned.values())
+    print(f"\np==0 中 mentioned 占比：chains {zero_m}/{all_zero}"
+          f"（{zero_m / all_zero * 100:.1f}%），boards {b_zero_m}/{b_zero}"
+          f"（{b_zero_m / b_zero * 100:.1f}%）")
 
     def probe(chain, stage, code):
-        return chains_out.get(chain, {}).get(stage, {}).get(code, {}).get("p")
+        v = chains_out.get(chain, {}).get(stage, {}).get(code, {})
+        return v.get("p"), v.get("m")
 
     print("\n知名案例抽查：")
-    print(f"  宁德时代 lithium.cell      = {probe('lithium', 'cell', '300750')}"
-          "（动力 0.6938 + 储能 0.1923，预期 ≈0.8861）")
-    print(f"  比亚迪   lithium.cell      = {probe('lithium', 'cell', '002594')}"
-          "（汽车占大头，预期明显 <1）")
-    print(f"  赣锋锂业 upstream_lithium  = {probe('lithium', 'upstream_lithium', '002460')}"
-          "（锂系列 0.6147；另有 0.339 锂电池系列归电芯口径）")
+    p, m = probe('lithium', 'cell', '300750')
+    print(f"  宁德时代 lithium.cell      = p {p}, m {m}（预期 p≈0.8861）")
+    p, m = probe('lithium', 'cell', '002594')
+    print(f"  比亚迪   lithium.cell      = p {p}, m {m}（预期 p=0, m=1："
+          "scope 有「锂离子电池」、business 有「二次充电电池」）")
+    p, m = probe('lithium', 'upstream_lithium', '002460')
+    print(f"  赣锋锂业 upstream_lithium  = p {p}, m {m}")
     ssb = boards_out.get("固态电池", {})
     ssb_nz = sum(1 for p in ssb.values() if p > 0)
-    print(f"  固态电池板块：{len(ssb)} 家中非零 {ssb_nz} 家（预期多数为 0）")
+    ssb_m = len(boards_mentioned.get("固态电池", []))
+    print(f"  固态电池板块 {len(ssb)} 家：p>0 有 {ssb_nz} 家，"
+          f"p=0 但文本提及 {ssb_m} 家，全零 {len(ssb) - ssb_nz - ssb_m} 家")
+    print("  机器人·丝杠三家提及情况：")
+    for code, nm in (("601100", "恒立液压"), ("300580", "贝斯特"), ("603009", "北特科技")):
+        v = chains_out["robot"]["screw"][code]
+        print(f"    {code} {nm}: p={v['p']}, m={v['m']}")
 
     print(f"\ndata/purity.json {os.path.getsize(out_path)/1024:.1f} KB，"
           f"period={period}，chains={len(chains_out)}，boards={len(boards_out)}")

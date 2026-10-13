@@ -644,9 +644,11 @@ function pickLang(zh, en) {
 }
 
 /* 概念纯度（照妖镜）：data/purity.json，离线生成。
-   chains[chainKey][stageKey][code] = { p, items:[[业务名, 占比], ...] }（链条看板阶段卡用），
-   boards[板块名][code] = p（行业页环节筛选、公司页环节 chips 用）。
-   0 是有效值（蹭概念信号），不是缺失；404/断网静默 null，全站不渲染任何纯度元素。 */
+   chains[chainKey][stageKey][code] = { p, items:[[业务名, 占比], ...], m }（链条看板阶段卡用），
+   boards[板块名][code] = p、boardsMentioned[板块名] = [code, ...]（行业页筛选、公司页 chips 用）。
+   三档语义：p>0 = 收入口径纯度；p==0 且公司介绍提及（m=1）= 布局·未单列；p==0 且未提及 = 未见披露——
+   没披露不等于没参与，所以 p==0 永远不显示成「纯度 0%」。
+   404/断网静默 null，全站不渲染任何纯度元素。 */
 let purityPromise = null;
 let purityData = null;
 function loadPurity() {
@@ -660,19 +662,43 @@ function chainPurity(chainKey, stageKey, code) {
 }
 function boardPurity(boardName, code) {
   const v = purityData?.boards?.[boardName]?.[code];
-  return typeof v === "number" ? v : null;
+  if (typeof v !== "number") return null;
+  return { p: v, m: (purityData?.boardsMentioned?.[boardName] || []).includes(code) ? 1 : 0 };
 }
-// 徽章：0 灰化（有效值——蹭概念信号），高纯度用强调色
-function purityBadgeHTML(p) {
-  if (p == null) return "";
-  const cls = p === 0 ? " is-zero" : p >= 0.6 ? " is-high" : "";
-  return `<span class="purity-badge${cls}">${esc(t("purity.badge", "纯度 {p}%").replace("{p}", Math.round(p * 100)))}</span>`;
+// 三档：null = 没数据（不渲染、排序沉底）
+function purityTier(e) {
+  if (!e) return null;
+  return e.p > 0 ? "pct" : e.m ? "mentioned" : "none";
+}
+// 排序键：p>0 档 > 提及档 > 未披露档，档内按 p（提及/未披露的 p 都是 0，不再细分）
+function purityRank(e) {
+  const tier = purityTier(e);
+  return tier === "pct" ? 2 + e.p : tier === "mentioned" ? 1 : 0;
+}
+// 百分比文本：p>0 永远不能四舍五入成 0（那等于把"有披露"显示成"没披露"）
+function purityPctText(p, digits = 0) {
+  const s = (p * 100).toFixed(digits);
+  return Number(s) > 0 ? s : "<" + (digits ? (0.1).toFixed(digits) : "1");
+}
+// 徽章三档：p>0 纯度百分比（≥0.6 强调色）；提及档中性灰实线（不是负面信号）；
+// 未披露档最弱灰虚线。hideNone：公司页 chips 用——未披露不渲染徽章（减少噪音）
+function purityBadgeHTML(e, hideNone = false) {
+  const tier = purityTier(e);
+  if (!tier) return "";
+  if (tier === "pct") {
+    return `<span class="purity-badge${e.p >= 0.6 ? " is-high" : ""}">`
+      + esc(t("purity.badge", "纯度 {p}%").replace("{p}", purityPctText(e.p))) + `</span>`;
+  }
+  if (tier === "mentioned") {
+    return `<span class="purity-badge is-mentioned">${esc(t("purity.mentioned", "布局·未单列"))}</span>`;
+  }
+  return hideNone ? "" : `<span class="purity-badge is-none">${esc(t("purity.none", "未见披露"))}</span>`;
 }
 // 口径说明（行业页环节筛选时、链条看板各有纯度覆盖时各放一处）
 function purityNoteHTML() {
   if (!purityData) return "";
   return `<p class="sec-sub purity-note">${esc(t("purity.note",
-    "纯度 = 主营构成中相关业务营收占比（报告期 {period}）；公司未单列该业务则计 0——不等于没有布局。")
+    "纯度 = 年报主营构成中相关业务的营收占比（{period}）。『布局·未单列』= 公司介绍提及该业务但未单独披露收入；『未见披露』= 两者皆无。披露口径不等于实际参与程度。")
     .replace("{period}", purityData.period || "—"))}</p>`;
 }
 
@@ -1612,8 +1638,9 @@ function indFiltered(ind) {
     const q = indexData?.quotes || {};
     const valOf = (c) => {
       if (indSort === "purity") {
-        // 环节筛选激活时才有意义；0 是有效值（蹭概念），只把"没数据"的沉底
-        return indSelChain ? boardPurity(indSelChain, c.ticker) : null;
+        // 环节筛选激活时才有意义；三档排序键（纯度 > 提及 > 未披露），没数据的沉底
+        const e = indSelChain ? boardPurity(indSelChain, c.ticker) : null;
+        return e ? purityRank(e) : null;
       }
       const f = q[c.ticker];
       if (!f) return null;
@@ -2874,7 +2901,7 @@ function companyTrendInnerHTML() {
   }
   const chips = segs.length ? `<div class="toolbar hist-segs">
       <span class="sec-sub">${esc(t("hist.segLabel", "环节"))}</span>
-      ${segs.map((s) => `<button class="chip" type="button" data-hseg="${esc(s)}" aria-pressed="${s === seg}">${esc(s)}${purityBadgeHTML(boardPurity(s, a.ticker))}</button>`).join("")}
+      ${segs.map((s) => `<button class="chip" type="button" data-hseg="${esc(s)}" aria-pressed="${s === seg}">${esc(s)}${purityBadgeHTML(boardPurity(s, a.ticker), true)}</button>`).join("")}
     </div>` : "";
   return trendChartHTML({
     series, dates,
@@ -2969,14 +2996,14 @@ function sparkSVG(vals, W = 168, H = 36) {
 }
 
 function liStageCard(s, vals, chainKey) {
-  // 公司按纯度降序（null=没数据，沉底；0 是有效值，排在正数之后）——纯度高的更值得代表
+  // 公司按纯度降序（p 主序、提及 m 次序；null=没数据，沉底）——纯度高的更值得代表
   const companies = (Array.isArray(s.companies) ? [...s.companies] : []).sort((a, b) => {
-    const pa = chainKey ? chainPurity(chainKey, s.key, a.code)?.p : null;
-    const pb = chainKey ? chainPurity(chainKey, s.key, b.code)?.p : null;
-    if (pa == null && pb == null) return 0;
-    if (pa == null) return 1;
-    if (pb == null) return -1;
-    return pb - pa;
+    const ea = chainKey ? chainPurity(chainKey, s.key, a.code) : null;
+    const eb = chainKey ? chainPurity(chainKey, s.key, b.code) : null;
+    if (ea == null && eb == null) return 0;
+    if (ea == null) return 1;
+    if (eb == null) return -1;
+    return purityRank(eb) - purityRank(ea);
   });
   const usable = Array.isArray(vals) && vals.length >= 20;
   const name = pickLang(s.name, s.nameEn);
@@ -2995,12 +3022,23 @@ function liStageCard(s, vals, chainKey) {
   }
   const co = (c) => {
     const cp = chainKey ? chainPurity(chainKey, s.key, c.code) : null;
-    const pct = cp ? `<em class="li-co-pct${cp.p === 0 ? " is-zero" : ""}">${(cp.p * 100).toFixed(1)}%</em>` : "";
-    const tip = cp
-      ? (Array.isArray(cp.items) && cp.items.length
-          ? cp.items.map(([n, r]) => `${n} ${(r * 100).toFixed(1)}%`).join(" + ")
-          : t("purity.zeroHint", "主营构成未单列该业务，计 0"))
-      : "";
+    const tier = purityTier(cp);
+    // 三档标记：p>0 显示百分比；p==0 显示「布局·未单列」/「未见披露」——永远不显示 0.0%
+    const pct = tier === "pct"
+      ? `<em class="li-co-pct">${esc(purityPctText(cp.p, 1))}%</em>`
+      : tier === "mentioned"
+        ? `<em class="li-co-pct is-mentioned">${esc(t("purity.mentioned", "布局·未单列"))}</em>`
+        : tier === "none"
+          ? `<em class="li-co-pct is-none">${esc(t("purity.none", "未见披露"))}</em>`
+          : "";
+    let tip = "";
+    if (tier === "pct" && Array.isArray(cp.items) && cp.items.length) {
+      tip = cp.items.map(([n, r]) => `${n} ${(r * 100).toFixed(1)}%`).join(" + ");
+    } else if (tier === "mentioned") {
+      tip = t("purity.mentionedHint", "公司介绍中提及该业务，收入未单列");
+    } else if (tier === "none") {
+      tip = t("purity.noneHint", "收入与介绍中均未提及");
+    }
     return `<a class="li-co" href="#/c/${encodeURIComponent(c.code)}"${tip ? ` title="${esc(tip)}"` : ""}>${esc(c.name)}${pct}</a>`;
   };
   const first = companies.slice(0, 4), rest = companies.slice(4);
