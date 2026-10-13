@@ -19,6 +19,8 @@ const CHAINS = [
   { hash: '#/robot', key: 'robot' },
   { hash: '#/compute', key: 'compute' },
   { hash: '#/storage', key: 'storage' },
+  { hash: '#/pharma', key: 'pharma' },
+  { hash: '#/auto', key: 'auto' },
 ];
 const chainData = {};
 const priceData = {};

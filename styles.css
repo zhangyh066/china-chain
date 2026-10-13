@@ -1428,10 +1428,10 @@ html:not([data-boot="on"]) .boot-console { display: none; }
 }
 
 /* ---- 产业链看板（#/li、#/pv、#/semi） ---- */
-/* 首页入口：3 列网格（六卡正好 3×2），窄屏 2 列 → 1 列 */
+/* 首页入口：4 列紧凑网格（八卡正好 4×2；后续加链继续往下排），窄屏 2 列 → 1 列 */
 .li-entry-sec { padding: 0; }
 .li-entries {
-  display: grid; grid-template-columns: repeat(3, 1fr);
+  display: grid; grid-template-columns: repeat(4, 1fr);
   gap: 10px;
 }
 @media (max-width: 1100px) { .li-entries { grid-template-columns: 1fr 1fr; } }
@@ -1469,6 +1469,8 @@ html:not([data-boot="on"]) .boot-console { display: none; }
   font-family: var(--mono); font-size: 14px;
 }
 .li-mats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* 3 张并列的子格（如汽车上游三件套）：一行三列，不留 2×2 的空角 */
+.li-mats-3 { grid-template-columns: repeat(3, 1fr); }
 .li-side-lbl {
   margin: 0 0 6px; font-size: 11px; color: var(--text-faint);
   font-family: var(--mono); letter-spacing: 0.08em;
@@ -1520,6 +1522,7 @@ html:not([data-boot="on"]) .boot-console { display: none; }
   .li-flow-main { flex-wrap: wrap; }
   .li-flow-main > .li-card { flex: 1 1 calc(50% - 10px); }
   .li-flow-main > .li-mats { flex: 1 1 100%; }
+  .li-mats-3 { grid-template-columns: 1fr 1fr; }
   .li-flow-main .li-arrow { display: none; }
 }
 @media (max-width: 700px) {

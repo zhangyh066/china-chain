@@ -610,8 +610,8 @@ function loadIndustryTrends(ind) {
    data/price/{key}.json（期货主力日线，有的链没有 → 价格区块自动不出现）。
    后台补抓期间个别环节序列可能还是 []——渲染层按"数据补齐中"降级，不算错。
    缺失/断网静默降级。 */
-const CHAIN_KEYS = ["lithium", "pv", "semi", "robot", "compute", "storage"];
-const CHAIN_ROUTE = { li: "lithium", pv: "pv", semi: "semi", robot: "robot", compute: "compute", storage: "storage" };
+const CHAIN_KEYS = ["lithium", "pv", "semi", "robot", "compute", "storage", "pharma", "auto"];
+const CHAIN_ROUTE = { li: "lithium", pv: "pv", semi: "semi", robot: "robot", compute: "compute", storage: "storage", pharma: "pharma", auto: "auto" };
 const chainBoardCache = new Map(); // key → Promise<data|null>
 const chainBoardData = new Map();  // key → 已落地的数据（首页入口卡同步读取用）
 function loadChainBoard(key) {
@@ -1454,7 +1454,7 @@ function boardTempHTML() {
 /* 首页的产业链看板入口：一个区块三张卡（锂/光伏/半导体），标题/sub 读各链
    JSON 自带的双语 meta；某条链 404 就跳过那张卡。数据是异步的，正文先放
    占位槽，渲染完后由 renderChainEntries 填进来（已缓存时同步填充无闪烁）。 */
-const CHAIN_HASH = { lithium: "#/li", pv: "#/pv", semi: "#/semi", robot: "#/robot", compute: "#/compute", storage: "#/storage" };
+const CHAIN_HASH = { lithium: "#/li", pv: "#/pv", semi: "#/semi", robot: "#/robot", compute: "#/compute", storage: "#/storage", pharma: "#/pharma", auto: "#/auto" };
 function chainEntriesHTML() {
   const cards = CHAIN_KEYS.map((k) => {
     const d = chainBoardData.get(k);
@@ -2884,6 +2884,18 @@ const CHAIN_LAYOUTS = {
       { label: ["cboard.support", "配套"], keys: ["tempctrl"] },
     ],
   },
+  // 医药：原料药 → 中游四个并列（创新药/疫苗/中药/器械，2×2 子格）；CXO 是研发服务方
+  pharma: {
+    main: ["api", ["innovative", "vaccine", "tcm", "device"]],
+    side: [
+      { label: ["cboard.support", "配套"], keys: ["cxo"] },
+    ],
+  },
+  // 汽车：上游三个并列（轻量化/热管理/内外饰，1×3 子格）→ 汽车电子与智驾 → 整车
+  auto: {
+    main: [["lightweight", "thermal", "trim"], "electronics", "oem"],
+    side: [],
+  },
 };
 
 function sparkSVG(vals, W = 168, H = 36) {
@@ -2988,7 +3000,7 @@ async function renderChainPage(chainKey) {
       <div class="li-flow">
         <div class="li-flow-main">
           ${layout.main.map((item) => Array.isArray(item)
-            ? `<div class="li-mats">${item.map(card).join("")}</div>`
+            ? `<div class="li-mats li-mats-${item.length}">${item.map(card).join("")}</div>`
             : card(item)).join(arrow)}
         </div>
         ${layout.side.length ? `<div class="li-flow-side">
