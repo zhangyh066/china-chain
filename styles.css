@@ -1381,6 +1381,9 @@ html:not([data-boot="on"]) .boot-console { display: none; }
 /* 行业一年涨跌榜（首页市场趋势区块内）：0 为中轴的双向条形，涨红跌绿 */
 .trank { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .trank-title { margin: 0 0 10px; font-size: 13px; color: var(--text-soft); }
+/* 三个榜单的口径说明：紧跟标题的一小行 muted 文字 */
+.trend-note { margin: 10px 0 2px; max-width: 72em; }
+.trank-note, .btemp-note { margin: -4px 0 10px; max-width: 72em; }
 .trank-grid { display: grid; grid-template-columns: 1fr; gap: 6px 28px; }
 @media (min-width: 900px) { .trank-grid { grid-template-columns: 1fr 1fr; } }
 .trank-row { display: flex; align-items: center; gap: 10px; padding: 2px 0; }
@@ -1425,12 +1428,14 @@ html:not([data-boot="on"]) .boot-console { display: none; }
 }
 
 /* ---- 产业链看板（#/li、#/pv、#/semi） ---- */
-/* 首页入口：一个区块最多三张卡（标题+sub+箭头），窄屏自动折行 */
+/* 首页入口：3 列网格（六卡正好 3×2），窄屏 2 列 → 1 列 */
 .li-entry-sec { padding: 0; }
 .li-entries {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  display: grid; grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
+@media (max-width: 1100px) { .li-entries { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 700px) { .li-entries { grid-template-columns: 1fr; } }
 .li-entry {
   display: flex; align-items: baseline; gap: 10px;
   padding: 12px 16px;

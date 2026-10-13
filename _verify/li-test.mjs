@@ -16,6 +16,9 @@ const CHAINS = [
   { hash: '#/li', key: 'lithium' },
   { hash: '#/pv', key: 'pv' },
   { hash: '#/semi', key: 'semi' },
+  { hash: '#/robot', key: 'robot' },
+  { hash: '#/compute', key: 'compute' },
+  { hash: '#/storage', key: 'storage' },
 ];
 const chainData = {};
 const priceData = {};
@@ -197,7 +200,7 @@ const entry = JSON.parse(await evaluate(`JSON.stringify({
     href: a.getAttribute('href'), title: a.querySelector('.li-entry-title')?.textContent
   }))
 })`));
-check('首页「产业链看板」区块：三张入口卡，标题来自各链 JSON meta',
+check('首页「产业链看板」区块：全部入口卡，标题来自各链 JSON meta',
   entry.secTitle === '产业链看板' && entry.cards.length === CHAINS.length
     && entry.cards.every((c) => {
       const key = CHAINS.find((x) => x.hash === c.href)?.key;

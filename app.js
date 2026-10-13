@@ -610,7 +610,8 @@ function loadIndustryTrends(ind) {
    data/price/{key}.json（期货主力日线，有的链没有 → 价格区块自动不出现）。
    后台补抓期间个别环节序列可能还是 []——渲染层按"数据补齐中"降级，不算错。
    缺失/断网静默降级。 */
-const CHAIN_KEYS = ["lithium", "pv", "semi"];
+const CHAIN_KEYS = ["lithium", "pv", "semi", "robot", "compute", "storage"];
+const CHAIN_ROUTE = { li: "lithium", pv: "pv", semi: "semi", robot: "robot", compute: "compute", storage: "storage" };
 const chainBoardCache = new Map(); // key → Promise<data|null>
 const chainBoardData = new Map();  // key → 已落地的数据（首页入口卡同步读取用）
 function loadChainBoard(key) {
@@ -688,10 +689,8 @@ function parseRoute() {
     };
   }
   if (h === "vision") return { name: "vision" };
-  // 产业链看板：#/li（锂，旧链接保留）、#/pv（光伏）、#/semi（半导体）
-  if (h === "li" || h === "pv" || h === "semi") {
-    return { name: "chain", chainKey: h === "li" ? "lithium" : h };
-  }
+  // 产业链看板：#/li（锂，旧链接保留）、#/pv、#/semi、#/robot、#/compute、#/storage
+  if (CHAIN_ROUTE[h]) return { name: "chain", chainKey: CHAIN_ROUTE[h] };
   // "atlas" 是"全景图谱"的旧名字，留着旧链接不失效
   if (h === "worldmap" || h === "atlas") return { name: "worldmap" };
   return { name: "home" };
@@ -1354,6 +1353,9 @@ function marketRankHTML() {
   }).join("");
   return `<div class="trank">
       <h3 class="trank-title">${esc(t("trend.rankTitle", "行业一年涨跌榜"))}</h3>
+      <p class="sec-sub trank-note">${esc(t("trend.rankNote",
+        "{n} 个行业按同一口径（等权指数）排近一年涨跌幅——看的是相对强弱，不是绝对水平。")
+        .replace("{n}", fmtInt(rows.length)))}</p>
       <div class="trank-grid">${items}</div>
     </div>`;
 }
@@ -1361,11 +1363,19 @@ function marketRankHTML() {
 function marketTrendHTML() {
   const d = trendsIndex;
   if (!d) return "";
+  // {comp} 整体占位：indexData 在时带精确数字，不在时用不带数字的措辞
+  const nCo = indexData?.companies?.length;
+  const comp = nCo
+    ? t("trend.marketNoteComp", "{n} 家公司").replace("{n}", fmtInt(nCo))
+    : t("trend.marketNoteCompAny", "上市公司");
   return trendChartHTML({
     series: [{ name: t("trend.marketLine", "全市场指数"), values: d.market, color: cssVar("--primary", "#E8A33D"), width: 2.2 }],
     dates: d.dates,
     title: t("trend.marketTitle", "市场趋势"),
     sub: t("trend.sub", "指数化 · 基期 = 100 · {n} 个交易日").replace("{n}", fmtInt(Math.min(d.dates.length, d.market.length))),
+    note: t("trend.marketNote",
+      "把 {comp}每天的涨跌幅做等权平均，基期 = 100——回答「市场整体在往哪走」，不是市场规模；等权的意思是小公司和大公司对方向的影响相同。")
+      .replace("{comp}", comp),
     foot: marketRankHTML() + boardTempHTML(),
   });
 }
@@ -1433,6 +1443,9 @@ function boardTempHTML() {
         <button class="chip" type="button" data-btemp="m" aria-pressed="false">${esc(t("trend.btempM", "近一月"))}</button>
       </span>
     </div>
+    <p class="sec-sub btemp-note">${esc(t("trend.btempNote",
+      "{n} 个产业链环节各按等权指数取区间涨跌幅，列出最热 5 个 + 最冷 5 个；环节比行业更细——资金往往先在某个环节动，再扩散到整个行业。")
+      .replace("{n}", fmtInt(valid.length)))}</p>
     <div data-btemp-body="w">${pane("w")}</div>
     <div data-btemp-body="m" hidden>${pane("m")}</div>
   </div>`;
@@ -1441,7 +1454,7 @@ function boardTempHTML() {
 /* 首页的产业链看板入口：一个区块三张卡（锂/光伏/半导体），标题/sub 读各链
    JSON 自带的双语 meta；某条链 404 就跳过那张卡。数据是异步的，正文先放
    占位槽，渲染完后由 renderChainEntries 填进来（已缓存时同步填充无闪烁）。 */
-const CHAIN_HASH = { lithium: "#/li", pv: "#/pv", semi: "#/semi" };
+const CHAIN_HASH = { lithium: "#/li", pv: "#/pv", semi: "#/semi", robot: "#/robot", compute: "#/compute", storage: "#/storage" };
 function chainEntriesHTML() {
   const cards = CHAIN_KEYS.map((k) => {
     const d = chainBoardData.get(k);
@@ -2648,7 +2661,7 @@ function histHTML(hist, opts = {}) {
    series: [{ name, values, color, width, seg? }]；seg 是环节名，供环节芯片联动。
    数据守卫生：序列与日期轴取公共长度、非有限值断笔跳过、span 兜底 1。
    foot 是插在图例行之后、区块收尾前的附加内容（首页用来放行业涨跌榜）。 */
-function trendChartHTML({ series, dates, title, sub, foot }) {
+function trendChartHTML({ series, dates, title, sub, foot, note }) {
   const rows = (series || []).filter((s) => Array.isArray(s.values) && s.values.length);
   const n = Math.min(Array.isArray(dates) ? dates.length : 0, ...rows.map((s) => s.values.length));
   if (!rows.length || n < 20) return "";
@@ -2710,6 +2723,7 @@ function trendChartHTML({ series, dates, title, sub, foot }) {
         <span class="sec-rule"></span>
         <span class="hist-chg ${changeClass(pct)}">${esc(fmtPct(pct))}</span>
       </div>
+      ${note ? `<p class="sec-sub trend-note">${esc(note)}</p>` : ""}
       <svg class="trend-svg" viewBox="0 0 ${W} ${H}" role="img"
            aria-label="${esc(title)} ${esc(fmtPct(pct))}">
         <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}"
@@ -2849,6 +2863,25 @@ const CHAIN_LAYOUTS = {
     main: ["design", "foundry", "osat"],
     side: [
       { label: ["cboard.upstreamSupport", "上游支撑"], keys: ["equipment_semi", "material", "eda"] },
+    ],
+  },
+  // 机器人：四个上游零部件并列（2×2 子格）→ 执行器总成 → 本体，无配套排
+  robot: {
+    main: [["reducer", "servo", "screw", "sensor"], "actuator", "body"],
+    side: [],
+  },
+  // 算力：芯片 → 光模块 → PCB → 服务器；液冷温控/电源是配套
+  compute: {
+    main: ["chip", "optical", "pcb", "server"],
+    side: [
+      { label: ["cboard.support", "配套"], keys: ["cooling", "power"] },
+    ],
+  },
+  // 储能：电池 → PCS → 系统集成；温控是配套
+  storage: {
+    main: ["battery", "pcs", "integrate"],
+    side: [
+      { label: ["cboard.support", "配套"], keys: ["tempctrl"] },
     ],
   },
 };
