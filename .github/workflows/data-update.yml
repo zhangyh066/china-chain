@@ -4,9 +4,10 @@ name: 收盘后更新数据
 # ⚠️ 东财接口对境外 runner IP 可能限流：run_all 失败时数据不更新、不提交，
 #    站点继续展示仓库里的旧数据 + 页面上原有的"截至日期"，不会回退或报错。
 #    commit 步骤用 if: success() 把守——前面任何一步红，就当天的更新作废。
+# 2026-10-15 起暂停每日自动运行（邮件太吵）；需要更新时手动 dispatch 或本地跑 run_all.py。
 on:
-  schedule:
-    - cron: "30 10 * * 1-5"
+  # schedule:
+  #   - cron: "30 10 * * 1-5"
   workflow_dispatch:
 
 permissions:
