@@ -373,5 +373,7 @@
   "em.title": "Supply-link transmission, measured",
   "em.body": "{e} disclosed supply links × 1 year of daily prices: same-week co-movement {r0}; customers leading by one week {r1} ({n}) — no cross-week lead-lag is visible at daily frequency; {p} of edges fit best at lag 0. The monthly Cohen–Frazzini (2008) effect does not replicate at weekly horizon.",
   "em.why": "The null result matters too: \"customers lead suppliers\" is falsified at weekly horizon, blocking an over-eager extrapolation of the monthly finding.",
-  "em.foot": "correlation ≠ causation · research use only · not a forecast"
+  "em.foot": "correlation ≠ causation · research use only · not a forecast",
+  "em.takeTitle": "Our Takeaway",
+  "em.takeBody": "Our tests rule out \"mechanical momentum transmission\": across 25k supplier-months in A-shares (2010–2026), customer returns show no predictive power for supplier returns (r≈0). Differentiation must come from structure itself — chain position, concentration shifts, new disclosures — not from predicting prices."
 }

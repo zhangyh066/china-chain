@@ -23,6 +23,10 @@ pipeline/real/profiles/
 pipeline/real/hist/
 pipeline/real/hist_failed.json
 
+# 全历史日线的抓取缓存（C&F 月度复刻用，fetch_history_full.py 可重建，不必入库）
+pipeline/real/hist_full/
+pipeline/real/hist_full_failed.json
+
 # 供应链原始数据集（CNRDS/DataSeed，许可限制：仅限本机使用，绝不入库、绝不外传）
 新建文件夹/
 

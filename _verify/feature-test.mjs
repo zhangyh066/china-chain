@@ -604,6 +604,18 @@ check('研究卡：阴性结果措辞（不可见/未复现/证伪）+「非预�
     && !!em.foot && em.foot.includes('非预测'),
   JSON.stringify({ why: em?.why, foot: em?.foot }));
 
+// 独立「研究结论」专框：静态文案，紧跟研究卡之后、视觉独立成框
+const emTake = JSON.parse(await evaluate(`JSON.stringify({
+  title: document.querySelector('.em-take .em-take-title')?.textContent || null,
+  body: document.querySelector('.em-take .em-take-body')?.textContent || null,
+  adjacent: !!document.querySelector('.em-card + .em-take'),
+})`));
+check('研究结论专框：「我们的判断」独立成框、紧接研究卡之后（静态文案不读 JSON）',
+  !!emTake && emTake.adjacent && emTake.title === '我们的判断'
+    && !!emTake.body && emTake.body.includes('机械动量传导') && emTake.body.includes('r≈0')
+    && emTake.body.includes('而不是预测涨跌'),
+  JSON.stringify(emTake));
+
 console.log('— 价值链地图导出 PNG（002594 手工档案）—');
 await evaluate(`location.href = ${JSON.stringify(BASE + '#/c/002594')}`);
 await waitFor(`!!document.getElementById('vcm-export')`);

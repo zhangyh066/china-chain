@@ -1495,6 +1495,11 @@ function edgeMomentumHTML() {
       <p class="em-why">${esc(t("em.why",
         "阴性结果同样重要：「客户领先供应商」在周度上被证伪，阻止了把月度结论外推到更短周期。"))}</p>
       <p class="em-foot">${esc(t("em.foot", "相关≠因果 · 研究用途 · 非预测"))}</p>
+    </div>
+    <div class="em-take">
+      <p class="em-take-title">${esc(t("em.takeTitle", "我们的判断"))}</p>
+      <p class="em-take-body">${esc(t("em.takeBody",
+        "实测排除了「机械动量传导」这条路——A 股 2010–2026、2.5 万个供应商-月观测中，客户涨跌对供应商未来收益没有预测力（r≈0）。差异化要赢，得靠结构本身——链条位置、集中度变化、新披露事件，而不是预测涨跌。"))}</p>
     </div>`;
 }
 

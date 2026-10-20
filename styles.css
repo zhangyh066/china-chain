@@ -1695,6 +1695,21 @@ html:not([data-boot="on"]) .boot-console { display: none; }
   letter-spacing: .05em; color: var(--text-faint);
 }
 
+/* 研究结论专框：与上面的数据卡（虚线淡底）区分开——实色左条 + 主色衬底强调，
+   仍是同一套暗色语言；静态文案，中英长度差异由 max-width + 行高吸收 */
+.em-take {
+  margin-top: 10px; padding: 14px 16px; max-width: 72em;
+  background: var(--primary-soft);
+  border: 1px solid color-mix(in srgb, var(--primary) 45%, var(--border));
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius);
+}
+.em-take-title {
+  margin: 0; font-size: 13px; font-weight: 600;
+  color: var(--primary-dark); letter-spacing: .03em;
+}
+.em-take-body { margin: 8px 0 0; font-size: 13px; line-height: 1.8; color: var(--text); }
+
 @media (max-width: 1100px) {
   .li-flow-main { flex-wrap: wrap; }
   .li-flow-main > .li-card { flex: 1 1 calc(50% - 10px); }
