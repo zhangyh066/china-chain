@@ -712,6 +712,30 @@ function loadTransmission() {
     .catch(() => (transmData = null));
 }
 
+/* 披露推断：data/chain_infer.json，离线生成（年报披露真边 × 链条结构）。
+   validate.chains[key]={consistent,sameStage,conflict,examples}：披露边方向与链条 stage 序的对账；
+   suggest[key]=[{code,name,stage,via:{to,toName,relation,ratio,year}}]：披露边连到链上成员、
+   但自身不在链条名单里的公司（推断候选，未经核实）；links 为跨链边（暂不上图）。
+   404/断网静默 null。 */
+let chainInferPromise = null;
+let chainInferData = null;
+function loadChainInfer() {
+  return chainInferPromise ||= getJSON("./data/chain_infer.json")
+    .then((d) => (chainInferData = (d && (d.validate || d.suggest) ? d : null)))
+    .catch(() => (chainInferData = null));
+}
+
+/* 披露边传导实测：data/edge_momentum.json，离线生成。
+   pooled.{lag0,lag1,lag2}={r,n}（全部边周观测池化）；bestLagHist={lag:边数}。
+   首页研究卡的唯一数据源——一个诚实的阴性结果；404/断网静默 null。 */
+let edgeMomPromise = null;
+let edgeMomData = null;
+function loadEdgeMomentum() {
+  return edgeMomPromise ||= getJSON("./data/edge_momentum.json")
+    .then((d) => (edgeMomData = (d && d.pooled ? d : null)))
+    .catch(() => (edgeMomData = null));
+}
+
 /* 客户与供应商（年报披露）：data/supply.json，离线生成。
    companies[code] = { conc:{year, top5C, top5S, concHist:[[year, top5C], ...近4年]},
                        customers:[{name, code|null, ratio, amount(万元)}], suppliers:[同构] }。
@@ -1444,6 +1468,36 @@ function marketRankHTML() {
     </div>`;
 }
 
+/* 首页研究卡：披露边传导实测——一个诚实的阴性结果。
+   检验「客户领先供应商」的假说：同周共动显著、跨周领先不可见；
+   写法遵守「检验了什么、没发现什么、为什么这也重要」，不写成「发现了什么」。 */
+function edgeMomentumHTML() {
+  const d = edgeMomData;
+  if (!d?.pooled?.lag0 || !d?.pooled?.lag1) return "";
+  const { lag0, lag1 } = d.pooled;
+  const hist = d.bestLagHist || {};
+  const histTotal = Object.values(hist).reduce((s, v) => s + (Number(v) || 0), 0);
+  const sameWeek = histTotal ? (hist["0"] || 0) / histTotal : null;
+  const rSeg = (v) => (v != null && Math.abs(v) < 0.005 ? "r≈0.00" : `r=${fmtNum(v, 2)}`);
+  const nTxt = (v) => (getLocale() === "en"
+    ? `n=${fmtInt(Math.round(v / 1000))}K`
+    : `n=${(v / 10000).toFixed(1).replace(/\.0$/, "")} 万`);
+  return `
+    <div class="em-card">
+      <p class="em-title">${esc(t("em.title", "披露边传导实测"))}</p>
+      <p class="em-body">${esc(t("em.body",
+        "{e} 条真实供应关系 × 1 年日线：同周共动 {r0}，客户领先一周 {r1}（{n}）——信息沿供应链的跨周滞后在日频样本上不可见；{p} 的边最佳 lag 为同周。Cohen-Frazzini(2008) 的月度效应未在周度复现。")
+        .replace("{e}", fmtInt(d.edgesUsed || 0))
+        .replace("{r0}", rSeg(lag0.r))
+        .replace("{r1}", rSeg(lag1.r))
+        .replace("{n}", nTxt(lag1.n))
+        .replace("{p}", sameWeek != null ? fmtPct(sameWeek * 100, false) : "—"))}</p>
+      <p class="em-why">${esc(t("em.why",
+        "阴性结果同样重要：「客户领先供应商」在周度上被证伪，阻止了把月度结论外推到更短周期。"))}</p>
+      <p class="em-foot">${esc(t("em.foot", "相关≠因果 · 研究用途 · 非预测"))}</p>
+    </div>`;
+}
+
 function marketTrendHTML() {
   const d = trendsIndex;
   if (!d) return "";
@@ -1460,7 +1514,7 @@ function marketTrendHTML() {
     note: t("trend.marketNote",
       "把 {comp}每天的涨跌幅做等权平均，基期 = 100——回答「市场整体在往哪走」，不是市场规模；等权的意思是小公司和大公司对方向的影响相同。")
       .replace("{comp}", comp),
-    foot: marketRankHTML() + boardTempHTML(),
+    foot: marketRankHTML() + boardTempHTML() + edgeMomentumHTML(),
   });
 }
 
@@ -3436,10 +3490,58 @@ function liStageCard(s, vals, chainKey) {
     </div>`;
 }
 
+/* 链条「披露校验」小结：披露边方向与链条 stage 序对账——只有一致/矛盾边 > 0 的链才显示。
+   lithium 10 一致 0 矛盾、auto 2、pharma 1；其余链（含 semi）暂无链内披露边，不出这行。 */
+function chainValidateHTML(chainKey) {
+  const v = chainInferData?.validate?.chains?.[chainKey];
+  if (!v) return "";
+  const ok = v.consistent || 0, bad = v.conflict || 0;
+  if (!ok && !bad) return "";
+  return `<p class="sec-sub li-validate"><span class="li-validate-badge">${esc(t("cboard.valBadge", "披露校验"))}</span>${esc(
+    t("cboard.valLine", "链条结构经年报披露数据校验：{n} 条边方向一致，{m} 条矛盾")
+      .replace("{n}", fmtInt(ok)).replace("{m}", fmtInt(bad)))}</p>`;
+}
+
+/* 「据披露推断的候选成员」：披露边连到链上成员、但自身不在链条名单里的公司。
+   措辞按 relation 区分（两种都来自候选公司自曝的年报）：
+   supplies_to = 候选人把链上成员列为客户（占候选人营收）；buys_from = 列为供应商（占候选人采购）。
+   推断候选 ≠ 正式成员：虚线框灰一档 + 显著的「未经核实」标注。 */
+function chainSuggestHTML(chainKey, d) {
+  const rows = chainInferData?.suggest?.[chainKey];
+  if (!Array.isArray(rows) || !rows.length) return "";
+  const stageName = new Map((d.stages || []).map((s) => [s.key, pickLang(s.name, s.nameEn)]));
+  const items = rows.slice(0, 20).map((e) => {
+    const via = e.via || {};
+    const pct = via.ratio != null ? fmtPct(via.ratio * 100, false) : "—";
+    const yr = via.year ? t("sup.concYear", "{y} 年报").replace("{y}", via.year) : "";
+    const basis = (via.relation === "supplies_to"
+      ? t("cboard.sugSupply", "向 {to} 供货，占本公司营收 {p}")
+      : t("cboard.sugBuy", "向 {to} 采购，占本公司采购 {p}"))
+      .replace("{to}", via.toName || "").replace("{p}", pct);
+    return `<div class="cand-row">
+      <a class="cand-name" href="#/c/${encodeURIComponent(e.code)}">${esc(e.name)}<span class="cand-code">${esc(e.code)}</span></a>
+      <span class="cand-stage">${esc(stageName.get(e.stage) || e.stage)}</span>
+      <span class="cand-basis">${esc(basis)}${yr ? `（${esc(yr)}）` : ""}</span>
+    </div>`;
+  }).join("");
+  return `
+    <section class="sec cand-sec">
+      <div class="sec-head">
+        <h2 class="sec-title">${esc(t("cboard.sugTitle", "据披露推断的候选成员"))}</h2>
+        <span class="sec-sub">${esc(t("cboard.sugSub", "年报披露边连到链上成员、但不在链条名单里的公司"))}</span>
+        <span class="sec-rule"></span>
+        <span class="tag tag-stale cand-tag">${esc(t("cboard.sugTag", "推断候选 · 未经核实"))}</span>
+      </div>
+      <div class="cand-list">${items}</div>
+      <p class="sec-sub cand-note">${esc(t("cboard.sugNote",
+        "由年报披露的供应关系按环节方向推断：「候选」仅代表与链上成员存在披露往来，是否真正属于该环节未经人工核实，请以公司官方披露为准。"))}</p>
+    </section>`;
+}
+
 async function renderChainPage(chainKey) {
   app.innerHTML = "";
   startLoading();
-  const [d, price] = await Promise.all([loadChainBoard(chainKey), loadChainPrice(chainKey), loadPurity(), loadTransmission()]);
+  const [d, price] = await Promise.all([loadChainBoard(chainKey), loadChainPrice(chainKey), loadPurity(), loadTransmission(), loadChainInfer()]);
   const r = parseRoute();
   if (r.name !== "chain" || r.chainKey !== chainKey) return;
   stopLoading();
@@ -3504,7 +3606,10 @@ async function renderChainPage(chainKey) {
         </div>` : ""}
       </div>
       ${purityData?.chains?.[chainKey] ? purityNoteHTML() : ""}
+      ${chainValidateHTML(chainKey)}
     </section>
+
+    ${chainSuggestHTML(chainKey, d)}
 
     ${tmSec || priceSec}
 
@@ -5324,7 +5429,7 @@ async function boot() {
 
   // graph 给首页的行业概览卡提供环节分布（行情的三个数已随 index.json 下来）。
   // 全市场走势指数与 graph 并行拉，首页首帧就能把走势图一起画出来。
-  await Promise.all([loadGraph(), loadTrendsIndex()]);
+  await Promise.all([loadGraph(), loadTrendsIndex(), loadEdgeMomentum()]);
   bootUI?.graphDone();
   // 把 index.json 里的轻量行情字段展开成 quotes 映射，下游渲染代码不用改。
   // 三个数全缺的公司不建条目——卡片本来就会按"没有数字"渲染。

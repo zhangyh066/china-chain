@@ -578,6 +578,32 @@ check('位置图披露层：披露卡实线加粗连锚点 vs 行业卡虚线 + 
     && pos.legend.includes('年报披露') && pos.legend.includes('行业推断'),
   JSON.stringify({ solid: pos.solid, dashed: pos.dashed, legend: pos.legend }));
 
+console.log('— 首页研究卡（披露边传导实测 · 阴性结果）—');
+const emom = JSON.parse(fs.readFileSync('data/edge_momentum.json', 'utf-8'));
+const emHistTotal = Object.values(emom.bestLagHist).reduce((s, v) => s + v, 0);
+const emSameWeek = (emom.bestLagHist['0'] / emHistTotal * 100).toFixed(2).replace(/\.?0+$/, '') + '%';
+await evaluate(`location.href = ${JSON.stringify(BASE)} + '#/'`);
+await waitFor(`!!document.querySelector('.em-card')`);
+const em = JSON.parse(await evaluate(`JSON.stringify({
+  title: document.querySelector('.em-title')?.textContent || null,
+  body: document.querySelector('.em-body')?.textContent || null,
+  why: document.querySelector('.em-why')?.textContent || null,
+  foot: document.querySelector('.em-foot')?.textContent || null,
+})`));
+check('研究卡：标题 + 数字从 JSON 读（r0=0.27 / r1≈0.00 / n=43.8万 / 67.75% 同周）',
+  !!em && !!em.title && em.title.includes('传导实测')
+    && !!em.body && em.body.includes(`r=${emom.pooled.lag0.r.toFixed(2)}`)
+    && em.body.includes('r≈0.00')
+    && em.body.includes(`${(emom.pooled.lag1.n / 10000).toFixed(1)} 万`)
+    && em.body.includes(emSameWeek)
+    && em.body.includes('1,842'),
+  JSON.stringify(em));
+check('研究卡：阴性结果措辞（不可见/未复现/证伪）+「非预测」声明',
+  !!em && em.body.includes('不可见') && em.body.includes('未在周度复现')
+    && !!em.why && em.why.includes('证伪')
+    && !!em.foot && em.foot.includes('非预测'),
+  JSON.stringify({ why: em?.why, foot: em?.foot }));
+
 console.log('— 价值链地图导出 PNG（002594 手工档案）—');
 await evaluate(`location.href = ${JSON.stringify(BASE + '#/c/002594')}`);
 await waitFor(`!!document.getElementById('vcm-export')`);

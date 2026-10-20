@@ -1647,6 +1647,54 @@ html:not([data-boot="on"]) .boot-console { display: none; }
 .li-more { font-size: 11.5px; padding: 2px 8px; }
 .li-src { margin-top: 4px; }
 
+/* 链条「披露校验」小结行：小徽记 + 一行小字，克制不抢眼 */
+.li-validate { display: flex; align-items: baseline; gap: 8px; margin: 10px 0 0; }
+.li-validate-badge {
+  flex: none; font-size: 10.5px; font-weight: 600; letter-spacing: .05em;
+  padding: 1px 7px; border-radius: 999px;
+  color: var(--primary-dark); background: var(--primary-soft);
+  border: 1px solid var(--primary);
+}
+
+/* 据披露推断的候选成员：虚线框灰一档，与正式成员卡片明确区隔 */
+.cand-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 8px 24px; margin-top: 4px;
+}
+.cand-row {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  padding: 8px 12px; font-size: 13px;
+  border: 1px dashed var(--border-strong); border-radius: var(--radius);
+  color: var(--text-soft); background: var(--surface-soft);
+}
+.cand-name { color: var(--text); text-decoration: none; font-weight: 500; }
+.cand-name:hover { color: var(--primary); }
+.cand-code {
+  margin-left: 6px; font-family: var(--mono); font-size: 10.5px;
+  color: var(--text-faint);
+}
+.cand-stage {
+  flex: none; font-size: 11px; padding: 0 6px; border-radius: 999px;
+  color: var(--text-faint); border: 1px solid var(--border);
+}
+.cand-basis { flex: 1 1 100%; font-size: 12px; color: var(--text-faint); }
+.cand-tag { flex: none; }
+.cand-note { margin: 10px 0 0; max-width: 72em; }
+
+/* 首页研究卡：克制的阴性结果，衬底比正文区块再淡半档 */
+.em-card {
+  margin-top: 16px; padding: 14px 16px;
+  border: 1px dashed var(--border-strong); border-radius: var(--radius);
+  background: var(--surface-soft); max-width: 72em;
+}
+.em-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: .03em; }
+.em-body { margin: 8px 0 0; font-size: 12.5px; line-height: 1.8; color: var(--text-soft); }
+.em-why { margin: 6px 0 0; font-size: 12.5px; line-height: 1.8; color: var(--text-soft); }
+.em-foot {
+  margin: 10px 0 0; font-family: var(--mono); font-size: 11px;
+  letter-spacing: .05em; color: var(--text-faint);
+}
+
 @media (max-width: 1100px) {
   .li-flow-main { flex-wrap: wrap; }
   .li-flow-main > .li-card { flex: 1 1 calc(50% - 10px); }

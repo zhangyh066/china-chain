@@ -361,5 +361,17 @@
   "cboard.srcNoteNoPrice": "数据来源：东方财富 · akshare（公开行情）· 更新 {d}",
   "cboard.materials": "辅材",
   "cboard.upstreamSupport": "上游支撑",
-  "cboard.entrySecTitle": "产业链看板"
+  "cboard.entrySecTitle": "产业链看板",
+  "cboard.valBadge": "披露校验",
+  "cboard.valLine": "链条结构经年报披露数据校验：{n} 条边方向一致，{m} 条矛盾",
+  "cboard.sugTitle": "据披露推断的候选成员",
+  "cboard.sugSub": "年报披露边连到链上成员、但不在链条名单里的公司",
+  "cboard.sugTag": "推断候选 · 未经核实",
+  "cboard.sugSupply": "向 {to} 供货，占本公司营收 {p}",
+  "cboard.sugBuy": "向 {to} 采购，占本公司采购 {p}",
+  "cboard.sugNote": "由年报披露的供应关系按环节方向推断：「候选」仅代表与链上成员存在披露往来，是否真正属于该环节未经人工核实，请以公司官方披露为准。",
+  "em.title": "披露边传导实测",
+  "em.body": "{e} 条真实供应关系 × 1 年日线：同周共动 {r0}，客户领先一周 {r1}（{n}）——信息沿供应链的跨周滞后在日频样本上不可见；{p} 的边最佳 lag 为同周。Cohen-Frazzini(2008) 的月度效应未在周度复现。",
+  "em.why": "阴性结果同样重要：「客户领先供应商」在周度上被证伪，阻止了把月度结论外推到更短周期。",
+  "em.foot": "相关≠因果 · 研究用途 · 非预测"
 }

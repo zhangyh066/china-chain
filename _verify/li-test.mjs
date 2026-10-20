@@ -420,6 +420,57 @@ const tmLagTxt = (st) => (st.lag > 0 ? `领先 ${st.lag} 日` : st.lag < 0 ? `�
   await shot('tm-pv-dark.png');
 }
 
+// ---- 披露校验小结 + 据披露推断的候选成员（chain_infer.json）
+{
+  const infer = JSON.parse(readFileSync('data/chain_infer.json', 'utf-8'));
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false });
+  await send('Page.navigate', { url: BASE + '?fresh=' + Date.now() + '#/li' });
+  await sleep(2600);
+  const val = JSON.parse(await evaluate(`JSON.stringify((() => {
+    const v = document.querySelector('.li-validate');
+    const cand = document.querySelector('.cand-sec');
+    const first = cand?.querySelector('.cand-row');
+    return {
+      badge: v?.querySelector('.li-validate-badge')?.textContent || null,
+      line: v?.textContent || null,
+      candTitle: cand?.querySelector('.sec-title')?.textContent || null,
+      tag: cand?.querySelector('.cand-tag')?.textContent || null,
+      rows: cand ? cand.querySelectorAll('.cand-row').length : 0,
+      firstName: first?.querySelector('.cand-name')?.textContent || null,
+      firstHref: first?.querySelector('.cand-name')?.getAttribute('href') || null,
+      firstStage: first?.querySelector('.cand-stage')?.textContent || null,
+      firstBasis: first?.querySelector('.cand-basis')?.textContent || null,
+      note: cand?.querySelector('.cand-note')?.textContent || null,
+    };
+  })())`));
+  const liV = infer.validate.chains.lithium;
+  const liS = infer.suggest.lithium[0];
+  check('披露校验：lithium 小结「10 条边方向一致，0 条矛盾」+ 徽记',
+    !!val && !!val.badge && !!val.line
+      && val.line.includes(`${liV.consistent} 条边方向一致`) && val.line.includes(`${liV.conflict} 条矛盾`),
+    JSON.stringify({ line: val?.line }));
+  check('候选成员：lithium 区块在场、首条丰元股份（88.26% 供比亚迪）链 #/c/002805、推断阶段名',
+    !!val && !!val.candTitle && val.candTitle.includes('候选') && val.rows > 0
+      && val.firstHref === '#/c/' + liS.code && !!val.firstName && val.firstName.includes(liS.name)
+      && !!val.firstBasis && val.firstBasis.includes('88.26%') && val.firstBasis.includes(liS.via.toName)
+      && !!val.firstStage,
+    JSON.stringify({ first: val?.firstName, basis: val?.firstBasis, stage: val?.firstStage }));
+  check('候选成员：显著「未经核实」标注 + 口径说明（非正式成员，以官方披露为准）',
+    !!val && !!val.tag && val.tag.includes('未经核实')
+      && !!val.note && val.note.includes('未经人工核实'),
+    JSON.stringify({ tag: val?.tag }));
+
+  // semi 无链内披露边 → 校验小结不出现（看板本体照常渲染）
+  await send('Page.navigate', { url: BASE + '?fresh=' + Date.now() + '#/semi' });
+  await sleep(2600);
+  const semi = JSON.parse(await evaluate(`JSON.stringify({
+    val: !!document.querySelector('.li-validate'),
+    flow: !!document.querySelector('.li-flow'),
+  })`));
+  check('披露校验：semi 无披露边 → 校验小结不出现（看板本体照常）',
+    semi.val === false && semi.flow === true, JSON.stringify(semi));
+}
+
 // ---- 首页入口：三张卡，标题来自各链 JSON，指向 #/li、#/pv、#/semi
 await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false });
 await send('Page.navigate', { url: BASE + '?fresh=' + Date.now() + '#/' });

@@ -361,5 +361,17 @@
   "cboard.srcNoteNoPrice": "Sources: East Money · akshare (public quotes) · updated {d}",
   "cboard.materials": "Materials",
   "cboard.upstreamSupport": "Upstream support",
-  "cboard.entrySecTitle": "Chain dashboards"
+  "cboard.entrySecTitle": "Chain dashboards",
+  "cboard.valBadge": "Disclosure check",
+  "cboard.valLine": "Chain structure cross-checked against annual-report disclosures: {n} edges direction-consistent, {m} conflicting",
+  "cboard.sugTitle": "Candidate members inferred from disclosures",
+  "cboard.sugSub": "Companies with disclosed links to chain members, but not on the chain roster",
+  "cboard.sugTag": "Inferred candidates · unverified",
+  "cboard.sugSupply": "supplies {to} · {p} of its own revenue",
+  "cboard.sugBuy": "buys from {to} · {p} of its own procurement",
+  "cboard.sugNote": "Inferred from annual-report supply links along the chain's direction: a \"candidate\" only means a disclosed relationship with a chain member — actual membership in this stage is not manually verified. Defer to official disclosures.",
+  "em.title": "Supply-link transmission, measured",
+  "em.body": "{e} disclosed supply links × 1 year of daily prices: same-week co-movement {r0}; customers leading by one week {r1} ({n}) — no cross-week lead-lag is visible at daily frequency; {p} of edges fit best at lag 0. The monthly Cohen–Frazzini (2008) effect does not replicate at weekly horizon.",
+  "em.why": "The null result matters too: \"customers lead suppliers\" is falsified at weekly horizon, blocking an over-eager extrapolation of the monthly finding.",
+  "em.foot": "correlation ≠ causation · research use only · not a forecast"
 }
