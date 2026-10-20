@@ -593,6 +593,40 @@ button { font-family: inherit; font-size: inherit; }
 }
 .intro-segs th { font-size: 12px; color: var(--text-faint); font-weight: 400; }
 .intro-segs td.num, .intro-segs th.num { text-align: right; padding-right: 0; }
+
+/* 客户与供应商（年报披露）：集中度行 + 实名明细两列 */
+.sup-conc {
+  display: flex; align-items: center; gap: 10px 22px; flex-wrap: wrap;
+  font-size: 13.5px; color: var(--text-soft);
+}
+.sup-conc-item b {
+  font-family: var(--mono); font-weight: 600; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.sup-conc-year { font-size: 12px; color: var(--text-faint); }
+.sup-conc-trend { display: inline-flex; }
+.sup-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 8px 40px; margin-top: 12px;
+}
+.sup-col-title { font-size: 12.5px; color: var(--text-faint); letter-spacing: .05em; }
+.sup-col-title .cf-meta { margin-left: 10px; }
+.sup-table {
+  width: 100%; border-collapse: collapse; margin-top: 6px;
+  font-size: 13.5px; font-variant-numeric: tabular-nums;
+}
+.sup-table th, .sup-table td {
+  text-align: left; padding: 5px 14px 5px 0;
+  border-bottom: 1px solid var(--gold-line, #D9D5CB);
+}
+.sup-table th { font-size: 12px; color: var(--text-faint); font-weight: 400; }
+.sup-table td.num, .sup-table th.num { text-align: right; padding-right: 0; font-family: var(--mono); }
+.sup-name { color: var(--text); text-decoration: none; }
+.sup-name:hover { color: var(--primary); }
+.sup-name.is-plain { color: var(--text-soft); }
+.sup-amt { color: var(--text-faint); font-size: 12.5px; }
+.sup-anon { margin: 10px 0 0; }
+.sup-note { margin: 12px 0 0; max-width: 72em; }
 .intro-scope { margin-top: 14px; max-width: 46em; font-size: 13.5px; color: var(--text-soft); }
 .intro-scope summary {
   cursor: pointer; color: var(--text-faint); font-size: 13px;

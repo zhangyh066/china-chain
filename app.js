@@ -712,6 +712,18 @@ function loadTransmission() {
     .catch(() => (transmData = null));
 }
 
+/* 客户与供应商（年报披露）：data/supply.json，离线生成。
+   companies[code] = { conc:{year, top5C, top5S, concHist:[[year, top5C], ...近4年]},
+                       customers:[{name, code|null, ratio, amount(万元)}], suppliers:[同构] }。
+   明细可能为空数组（匿名披露）；整公司无数据 → 区块不出现；404/断网静默 null。 */
+let supplyPromise = null;
+let supplyData = null;
+function loadSupply() {
+  return supplyPromise ||= getJSON("./data/supply.json")
+    .then((d) => (supplyData = (d && d.companies ? d : null)))
+    .catch(() => (supplyData = null));
+}
+
 /* ---- 行情新鲜度 ------------------------------------------------------------
    indexData.generatedAt 是行情快照的日期。超过 10 天就在公司页标签行和
    首页免责条里挂一枚琥珀色警示——数据还在，但要让人知道它不是新的。 */
@@ -815,6 +827,7 @@ async function route() {
         // 行业/环节指数（走势图三线对照用；行业可能不在 index.json 就跳过）
         info?.industry ? loadIndustryTrends(info.industry) : Promise.resolve(null),
         loadPurity(),              // 环节 chips 上的纯度徽章；缺失静默降级
+        loadSupply(),              // 客户与供应商区块；缺失静默降级
       ]);
       let card = null;
       if (info && info.curated) {
@@ -2605,6 +2618,75 @@ function introHTML(pf) {
     </section>`;
 }
 
+// 金额单位是「万元」：中文亿/万，英文 ¥B/¥M（与 fmtCap 同一习惯）
+function fmtWan(v) {
+  if (v == null) return "—";
+  if (getLocale() === "en") {
+    const yuan = v * 1e4;
+    if (yuan >= 1e9) return `¥${(yuan / 1e9).toFixed(2).replace(/\.?0+$/, "")}B`;
+    if (yuan >= 1e6) return `¥${(yuan / 1e6).toFixed(1).replace(/\.0$/, "")}M`;
+    return `¥${fmtInt(yuan)}`;
+  }
+  if (v >= 10000) return `${(v / 10000).toFixed(2).replace(/\.?0+$/, "")}亿`;
+  return `${fmtNum(v, 0)}万`;
+}
+
+/* 客户与供应商（年报披露）：集中度行（标注披露年份 + 近 4 年客户集中度迷你趋势）
+   + 实名明细两列（code 非空链公司页）。明细为空 → 集中度行 + 降级小字；
+   整公司无数据 → ""（区块不出现）。 */
+function supplyHTML(ticker) {
+  const rec = supplyData?.companies?.[ticker];
+  if (!rec || !rec.conc) return "";
+  const { year, top5C, top5S, concHist } = rec.conc;
+  const customers = Array.isArray(rec.customers) ? rec.customers : [];
+  const suppliers = Array.isArray(rec.suppliers) ? rec.suppliers : [];
+
+  // 集中度趋势比单点值更有信息量：近 4 年前五客户集中度 sparkline
+  const hist = (Array.isArray(concHist) ? concHist : []).filter((h) => Number.isFinite(h?.[1]));
+  const spark = hist.length >= 2 ? sparkSVG(hist.map((h) => h[1]), 120, 30) : "";
+  const concRow = `<div class="sup-conc">
+      <span class="sup-conc-item">${esc(t("sup.top5C", "前五客户集中度"))} <b>${esc(fmtPct(top5C * 100, false))}</b></span>
+      <span class="sup-conc-item">${esc(t("sup.top5S", "前五供应商集中度"))} <b>${esc(fmtPct(top5S * 100, false))}</b></span>
+      <span class="sup-conc-year">${esc(t("sup.concYear", "{y} 年报").replace("{y}", year))}</span>
+      ${spark ? `<span class="sup-conc-trend" title="${esc(t("sup.concTrend", "前五客户集中度（{r}）")
+        .replace("{r}", `${hist[0][0]}–${hist[hist.length - 1][0]}`))}">${spark}</span>` : ""}
+    </div>`;
+
+  const detailCol = (titleKey, titleZh, rows) => `
+    <div class="sup-col">
+      <div class="sup-col-title">${esc(t(titleKey, titleZh))}<span class="cf-meta">${esc(t("sup.yearTag", "{y} 年报披露").replace("{y}", year))}</span></div>
+      <table class="sup-table">
+        <tr><th>${esc(t("sup.colName", "名称"))}</th>
+            <th class="num">${esc(t("sup.colRatio", "占比"))}</th>
+            <th class="num">${esc(t("sup.colAmount", "金额"))}</th></tr>
+        ${rows.map((e) => `<tr><td>${e.code
+          ? `<a class="sup-name" href="#/c/${encodeURIComponent(e.code)}">${esc(e.name)}</a>`
+          : `<span class="sup-name is-plain">${esc(e.name)}</span>`}</td>
+          <td class="num">${esc(fmtPct((e.ratio || 0) * 100, false))}</td>
+          <td class="num sup-amt">${esc(fmtWan(e.amount))}</td></tr>`).join("")}
+      </table>
+    </div>`;
+
+  const cols = [];
+  if (customers.length) cols.push(detailCol("sup.customers", "客户", customers));
+  if (suppliers.length) cols.push(detailCol("sup.suppliers", "供应商", suppliers));
+
+  return `
+    <section class="sec sup-sec">
+      <div class="sec-head">
+        <h2 class="sec-title">${esc(t("sup.title", "客户与供应商"))}</h2>
+        <span class="sec-sub">${esc(t("sup.sub", "年报披露的前五名单"))}</span>
+        <span class="sec-rule"></span>
+      </div>
+      ${concRow}
+      ${cols.length
+        ? `<div class="sup-grid">${cols.join("")}</div>`
+        : `<p class="sec-sub sup-anon">${esc(t("sup.anon", "该公司未披露实名客户/供应商"))}</p>`}
+      <p class="sec-sub sup-note">${esc(t("sup.note",
+        "来自上市公司年报披露（学术数据集整理），仅含实名披露的对手方；披露节奏为公司自曝，年份可能滞后"))}</p>
+    </section>`;
+}
+
 // 手工梳理公司的真实价值链地图（节点来自人工整理的档案）
 function curatedMapSection(data) {
   return `
@@ -3331,6 +3413,7 @@ function renderCompany(data) {
     </header>
     ${companyTrendHTML(data)}
     ${introHTML(pf)}
+    ${supplyHTML(a.ticker)}
 
     <section class="sec">
       <div class="sec-head">

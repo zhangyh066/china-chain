@@ -397,6 +397,83 @@ if (chipName) {
   check('回「全部环节」：细分线全部复原', back.ops.length === 1 && back.ops[0] === '1', back.ops.join(','));
 }
 
+console.log('— 客户与供应商（年报披露）—');
+const supply = JSON.parse(fs.readFileSync('data/supply.json', 'utf-8'));
+// 与 i18n fmtPct 同口径：两位小数、去尾零
+const pctTxt = (v) => (v * 100).toFixed(2).replace(/\.?0+$/, '') + '%';
+// 样本 1：实名明细齐全（000559 万向钱潮，客户第一是比亚迪）
+const sFull = '000559';
+const sFullRec = supply.companies[sFull];
+// 样本 2：有集中度但实名明细为空（降级文案）；样本 3：index 有但 supply 没有（整块不出现）
+const sAnon = idx.companies.find((c) => {
+  const r = supply.companies[c.ticker];
+  return r && r.conc && !(r.customers || []).length && !(r.suppliers || []).length;
+});
+const sNone = idx.companies.find((c) => !supply.companies[c.ticker]);
+console.log(`  样本：明细齐全=${sFull}；明细空=${sAnon ? `${sAnon.name} ${sAnon.ticker}` : '无'}；`
+  + `无数据=${sNone ? `${sNone.name} ${sNone.ticker}` : '无'}`);
+
+await evaluate(`location.href = ${JSON.stringify(BASE + '#/c/' + sFull)}`);
+await waitFor(`!!document.querySelector('.pr-title')`);
+await waitFor(`!!document.querySelector('.sup-sec')`);
+const sup1 = JSON.parse(await evaluate(`JSON.stringify((() => {
+  const sec = document.querySelector('.sup-sec');
+  if (!sec) return null;
+  const byd = sec.querySelector('a.sup-name[href="#/c/002594"]');
+  const tds = byd ? [...byd.closest('tr').querySelectorAll('td')] : [];
+  return {
+    concText: sec.querySelector('.sup-conc')?.textContent || '',
+    spark: !!sec.querySelector('.sup-conc-trend svg path'),
+    cols: sec.querySelectorAll('.sup-col').length,
+    yearTags: [...sec.querySelectorAll('.sup-col-title .cf-meta')].map((e) => e.textContent),
+    bydName: byd?.textContent || null,
+    bydPct: tds[1]?.textContent || null,
+    bydAmt: tds[2]?.textContent || null,
+    plainNames: sec.querySelectorAll('.sup-name.is-plain').length,
+    note: sec.querySelector('.sup-note')?.textContent || null,
+  };
+})())`));
+const conc = sFullRec.conc;
+check('客户与供应商：000559 区块——集中度两项+披露年份+近4年趋势 sparkline+两列明细（表头注明年报）',
+  !!sup1 && sup1.concText.includes(pctTxt(conc.top5C)) && sup1.concText.includes(pctTxt(conc.top5S))
+    && sup1.concText.includes(String(conc.year))
+    && sup1.spark && sup1.cols === 2
+    && sup1.yearTags.length === 2 && sup1.yearTags.every((y) => y.includes(String(conc.year))),
+  JSON.stringify({ conc: sup1?.concText, cols: sup1?.cols, spark: sup1?.spark }));
+check('客户与供应商：比亚迪行链到 #/c/002594，占比 13.05% 与金额（亿）渲染',
+  !!sup1 && !!sup1.bydName && sup1.bydName.includes('比亚迪')
+    && sup1.bydPct === pctTxt(sFullRec.customers[0].ratio)
+    && !!sup1.bydAmt && sup1.bydAmt.includes('亿'),
+  JSON.stringify({ name: sup1?.bydName, pct: sup1?.bydPct, amt: sup1?.bydAmt }));
+check('客户与供应商：code 为空的对手方是纯文本（无链接），口径说明在场',
+  !!sup1 && sup1.plainNames >= 3 && !!sup1.note && sup1.note.includes('年报披露'),
+  `plain=${sup1?.plainNames} note=${(sup1?.note || '').slice(0, 24)}`);
+
+if (sAnon) {
+  await evaluate(`location.href = ${JSON.stringify(BASE)} + '#/c/${sAnon.ticker}'`);
+  await waitFor(`(document.querySelector('.pr-title')?.textContent || '').includes(${JSON.stringify(sAnon.name)})`);
+  const sup2 = JSON.parse(await evaluate(`JSON.stringify({
+    sec: !!document.querySelector('.sup-sec'),
+    anon: document.querySelector('.sup-anon')?.textContent || null,
+    grid: !!document.querySelector('.sup-grid'),
+    concRow: !!document.querySelector('.sup-conc')
+  })`));
+  check(`客户与供应商：${sAnon.name} 明细为空 → 降级文案 + 集中度行保留、无两列`,
+    sup2.sec && sup2.anon === '该公司未披露实名客户/供应商' && !sup2.grid && sup2.concRow,
+    JSON.stringify(sup2));
+} else {
+  check('客户与供应商：明细为空样本（找不到，条件跳过）', true, 'no sample');
+}
+
+if (sNone) {
+  await evaluate(`location.href = ${JSON.stringify(BASE)} + '#/c/${sNone.ticker}'`);
+  await waitFor(`(document.querySelector('.pr-title')?.textContent || '').includes(${JSON.stringify(sNone.name)})`);
+  const sup3 = await evaluate(`!!document.querySelector('.sup-sec')`);
+  check(`客户与供应商：${sNone.name} 不在 supply.json → 区块整块不出现`, sup3 === false, `sec=${sup3}`);
+} else {
+  check('客户与供应商：无数据样本（找不到，条件跳过）', true, 'no sample');
+}
+
 console.log('— 价值链地图导出 PNG（002594 手工档案）—');
 await evaluate(`location.href = ${JSON.stringify(BASE + '#/c/002594')}`);
 await waitFor(`!!document.getElementById('vcm-export')`);

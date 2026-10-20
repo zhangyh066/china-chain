@@ -23,6 +23,9 @@ pipeline/real/profiles/
 pipeline/real/hist/
 pipeline/real/hist_failed.json
 
+# 供应链原始数据集（CNRDS/DataSeed，许可限制：仅限本机使用，绝不入库、绝不外传）
+新建文件夹/
+
 # 系统/编辑器杂项
 .DS_Store
 Thumbs.db

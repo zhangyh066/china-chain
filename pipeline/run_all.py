@@ -22,6 +22,11 @@
 仅当 data/chain/ 存在时跑）、build_purity.py（概念纯度，离线，仅当
 data/p/ 存在时跑，读当轮 chain 产物）。
 
+purity 之后还有本地专属一步 build_supply.py（披露级供应链：前五大客户/
+供应商实名明细与集中度）：原始数据是 新建文件夹/ 下的 CNRDS 表，许可
+红线——仅限本机使用，绝不入库、绝不外传（新建文件夹/ 已加 .gitignore）。
+原始文件不存在（如 CI runner）时静默跳过，不算失败。
+
 用法：
   python run_all.py                  # 六步，增量（有缓存的自动跳过联网）
   python run_all.py --refresh        # 六步，行情强制重拉
@@ -47,6 +52,7 @@ PURITY_STEP = ("build_purity.py", False)
 TRENDS_STEP = ("build_trends.py", False)
 CHAINS_STEP = ("build_chains.py", False)
 TRANSMISSION_STEP = ("build_transmission.py", False)
+SUPPLY_STEP = ("build_supply.py", False)
 
 
 def run(script, args):
@@ -121,6 +127,22 @@ def main():
             return rc
     else:
         print("\n-- 跳过 build_purity.py：data/p/ 不存在", flush=True)
+
+    # 披露级供应链（本地专属）：原始表在 新建文件夹/ 下才跑，CI 上没有就静默跳过。
+    # 许可红线：原始数据仅限本机使用，绝不入库、绝不外传（新建文件夹/ 已加 .gitignore）
+    raw_dir = os.path.join(os.path.dirname(HERE), "新建文件夹")
+    has_raw = os.path.isdir(raw_dir) and any(
+        "SC_TopFiveSaleInfo.xlsx" in files
+        for _dp, _dn, files in os.walk(raw_dir))
+    if has_raw:
+        rc = run(SUPPLY_STEP[0], [])
+        n_steps += 1
+        if rc:
+            print(f"\n[FAIL] build_supply.py 中断，总耗时 {(time.time()-t0)/60:.1f} 分钟")
+            return rc
+    else:
+        print("\n-- 跳过 build_supply.py：新建文件夹/ 无 CNRDS 原始表"
+              "（本地专属数据，CI 上属预期）", flush=True)
 
     print(f"\n[ok] {n_steps} 步全部完成，总耗时 {(time.time()-t0)/60:.1f} 分钟")
     return 0
