@@ -33,7 +33,16 @@ run_all.py 中本步骤仅在原始文件存在时执行（CI runner 上没有�
   {schemaVersion:1, generatedAt, sourceNote, companies:{code:{
     conc:{year, top5C, top5S, concHist:[[year, top5C],…]},
     customers:[{name, code, ratio, amount}],   // 最新有实名行年份，≤5 条
-    suppliers:[…]}}}
+    suppliers:[…],
+    rev:{asSupplierOf:[{from, name, ratio, amount, year}],   // 反向披露索引
+         asCustomerOf:[…]}}}}
+  rev 语义：asSupplierOf 一条表示"from 公司把我（本公司）列为 from 的客户
+  （即 from 是我的供应商），ratio 占 from 营收比，year 是 from 的披露年"；
+  asCustomerOf 镜像——from 把我列为 from 的供应商（from 是我的客户），
+  ratio 占 from 采购比。只收库内→库内的边（from 必为 6 位库内码），
+  name 冗余存 from 公司简称省前端查表。零自曝公司（如宁德时代）的真实
+  连线全部来自这里。每侧按 ratio 降序截断 ≤15 条（防 hub 爆体积；若体积
+  增长超 30% 则收 ≤10，截掉的边计入运行统计）。无反向边的公司不写 rev。
   体量目标 < SIZE_CAP（2 MB）：先写全量 concHist，超了逐级砍到近 10/5/4/3 年。
 
 用法：python build_supply.py
@@ -205,6 +214,7 @@ def main():
     # 出产物
     generated = date.today().isoformat()
     companies = {}
+    years_of = {}          # code -> [客户明细年份, 供应商明细年份]（rev 的年戳用）
     st_conc = st_cust = st_supp = 0
     recent_codes = set()
     n_edges = 0
@@ -241,6 +251,7 @@ def main():
 
         # 明细：每侧取"有实名行的最新年份"，按占比降序 ≤5 条
         out_sides = []
+        year_sides = [None, None]
         for side in (0, 1):
             d_years = det.get(code, [{}, {}])[side]
             picked = []
@@ -265,8 +276,10 @@ def main():
                     st_supp += 1
                 if det_year >= 2023:
                     recent_codes.add(code)
+                year_sides[side] = det_year
             out_sides.append(picked)
         st_conc += 1
+        years_of[code] = year_sides
         companies[code] = {"conc": conc_obj,
                            "customers": out_sides[0], "suppliers": out_sides[1]}
 
@@ -285,6 +298,56 @@ def main():
         if len(payload.encode("utf-8")) <= SIZE_CAP:
             trimmed = keep
             break
+    size_fwd = len(payload.encode("utf-8"))
+
+    # 反向披露索引：A 的明细里"B(code) 是我的客户/供应商" → B.rev 里记一条
+    # "A(from) 把我列为客户/供应商"。只收库内→库内的边；每侧按 ratio 降序
+    # 截断（REV_CAP 梯队 15→10，防 hub 节点爆体积，被截掉的边计入统计）。
+    rev_cap = None
+    rev_total = rev_dropped = 0
+    rev_s = rev_c = 0
+    for cap in (15, 10):
+        for c in companies.values():
+            c.pop("rev", None)
+        rev_total = rev_dropped = 0
+        for code, node in companies.items():
+            yc, ys = years_of.get(code, (None, None))
+            for side, key, yr in ((0, "customers", yc), (1, "suppliers", ys)):
+                for e in node[key]:
+                    dst = e["code"]
+                    if not dst or dst not in companies:
+                        continue
+                    bucket = "asSupplierOf" if side == 0 else "asCustomerOf"
+                    r = companies[dst].setdefault(
+                        "rev", {"asSupplierOf": [], "asCustomerOf": []})
+                    r[bucket].append({"from": code, "name": ours[code],
+                                      "ratio": e["ratio"], "amount": e["amount"],
+                                      "year": yr})
+        for node in companies.values():
+            r = node.get("rev")
+            if not r:
+                continue
+            for bucket in ("asSupplierOf", "asCustomerOf"):
+                lst = sorted(r[bucket], key=lambda x: (-(x["ratio"] or 0), x["from"]))
+                rev_dropped += max(0, len(lst) - cap)
+                r[bucket] = lst[:cap]
+            if not r["asSupplierOf"] and not r["asCustomerOf"]:
+                del node["rev"]
+        payload = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+        # rev 增量的预算是相对正向产物 +30%（任务口径）；正向已占 2MB 上限的
+        # 99%，故绝对上限 SIZE_CAP 对合并产物不再适用，仅以 +30% 为闸
+        if len(payload.encode("utf-8")) <= size_fwd * 1.30:
+            rev_cap = cap
+            break
+    rev_total = sum(len(n["rev"][b]) for n in companies.values() if "rev" in n
+                    for b in ("asSupplierOf", "asCustomerOf"))
+    rev_s = sum(1 for n in companies.values()
+                if n.get("rev", {}).get("asSupplierOf"))
+    rev_c = sum(1 for n in companies.values()
+                if n.get("rev", {}).get("asCustomerOf"))
+    hubs = sorted(
+        ((len(n["rev"]["asSupplierOf"]) + len(n["rev"]["asCustomerOf"]), code)
+         for code, n in companies.items() if "rev" in n), reverse=True)[:10]
     out_path = os.path.join(DATA, "supply.json")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(payload)
@@ -297,6 +360,12 @@ def main():
     print(f"有集中度数据 {st_conc}；有实名客户明细 {st_cust}、"
           f"实名供应商明细 {st_supp}；明细年份 2023+ 的公司 {len(recent_codes)}", flush=True)
     print(f"库内公司间连线（对手方命中代码）{n_edges} 条", flush=True)
+    print(f"反向索引：rev 边 {rev_total}（截断 cap={rev_cap}，砍掉 {rev_dropped}），"
+          f"有 asSupplierOf 的公司 {rev_s}、asCustomerOf {rev_c}；"
+          f"体积 {size_fwd/1024:.0f}→{size/1024:.0f} KB"
+          f"（{(size/size_fwd-1)*100:.1f}%）", flush=True)
+    print("hub top10（被引用次数 代码 简称）:",
+          [(c, ours[c], n) for n, c in hubs], flush=True)
     return 0
 
 

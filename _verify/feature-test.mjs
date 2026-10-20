@@ -424,8 +424,8 @@ const sup1 = JSON.parse(await evaluate(`JSON.stringify((() => {
   return {
     concText: sec.querySelector('.sup-conc')?.textContent || '',
     spark: !!sec.querySelector('.sup-conc-trend svg path'),
-    cols: sec.querySelectorAll('.sup-col').length,
-    yearTags: [...sec.querySelectorAll('.sup-col-title .cf-meta')].map((e) => e.textContent),
+    cols: sec.querySelectorAll('.sup-grid .sup-col').length,
+    yearTags: [...sec.querySelectorAll('.sup-grid .sup-col-title .cf-meta')].map((e) => e.textContent),
     bydName: byd?.textContent || null,
     bydPct: tds[1]?.textContent || null,
     bydAmt: tds[2]?.textContent || null,
@@ -473,6 +473,110 @@ if (sNone) {
 } else {
   check('客户与供应商：无数据样本（找不到，条件跳过）', true, 'no sample');
 }
+
+console.log('— 反向披露（据对方披露）+ 披露真边 —');
+// 300750 宁德：零自曝（customers/suppliers 皆空），rev.asSupplierOf 12 条（尚太科技 70.48% 居首）+ asCustomerOf 2 条
+const sRev = supply.companies['300750'].rev;
+await evaluate(`location.href = ${JSON.stringify(BASE + '#/c/300750')}`);
+await waitFor(`!!document.querySelector('.sup-rev')`);
+const rev1 = JSON.parse(await evaluate(`JSON.stringify((() => {
+  const sec = document.querySelector('.sup-sec');
+  const rev = sec ? sec.querySelector('.sup-rev') : null;
+  if (!rev) return null;
+  const first = rev.querySelector('.sup-col a.sup-name');
+  const tds = first ? [...first.closest('tr').querySelectorAll('td')] : [];
+  return {
+    noSelf: sec.querySelector('.sup-no-self')?.textContent || null,
+    anon: !!sec.querySelector('.sup-anon'),
+    grids: sec.querySelectorAll('.sup-grid').length,
+    cols: rev.querySelectorAll('.sup-col').length,
+    upMeta: rev.querySelector('.sup-col-title .cf-meta')?.textContent || '',
+    dnMeta: rev.querySelectorAll('.sup-col-title .cf-meta')[1]?.textContent || '',
+    href: first?.getAttribute('href') || null,
+    name: first?.textContent || null,
+    pct: tds[1]?.textContent || null,
+    amt: tds[2]?.textContent || null,
+    yr: tds[3]?.textContent || null,
+    revNote: sec.querySelector('.sup-rev-note')?.textContent || '',
+  };
+})())`));
+check('反向披露：宁德零自曝 → 过渡句 + 反向两列（无正向两列、无匿名降级文案）',
+  !!rev1 && !!rev1.noSelf && rev1.noSelf.includes('未自曝') && !rev1.anon
+    && rev1.grids === 0 && rev1.cols === 2,
+  JSON.stringify({ noSelf: rev1?.noSelf, grids: rev1?.grids, cols: rev1?.cols }));
+check('反向披露：列头口径「占对方营收比 / 占对方采购比」+ 口径说明含「占对方」',
+  !!rev1 && rev1.upMeta.includes('占对方营收') && rev1.dnMeta.includes('占对方采购')
+    && rev1.revNote.includes('占对方'),
+  JSON.stringify({ up: rev1?.upMeta, dn: rev1?.dnMeta }));
+check('反向披露：尚太科技行——链 #/c/001301、占比 70.48%、金额（亿）、2025 披露',
+  !!rev1 && rev1.href === '#/c/001301' && rev1.name.includes('尚太科技')
+    && rev1.pct === pctTxt(sRev.asSupplierOf[0].ratio)
+    && !!rev1.amt && rev1.amt.includes('亿') && rev1.yr.includes(String(sRev.asSupplierOf[0].year)),
+  JSON.stringify({ href: rev1?.href, pct: rev1?.pct, amt: rev1?.amt, yr: rev1?.yr }));
+
+// 同一页（300750 手工档案）：价值链地图的披露真边 vs 推断虚线
+await waitFor(`document.querySelectorAll('#vcm-links path').length > 0`);
+const vcm = JSON.parse(await evaluate(`JSON.stringify((() => {
+  const paths = [...document.querySelectorAll('#vcm-links path')].map((p) => ({
+    w: +p.getAttribute('stroke-width'), dash: p.getAttribute('stroke-dasharray') || '' }));
+  return {
+    discClusters: document.querySelectorAll('.vcm-cluster[data-disclosed="1"]').length,
+    discUp: !!document.querySelector('.vcm-col[data-dir="upstream"][data-tier="1"] .vcm-cluster[data-disclosed="1"]'),
+    discDn: !!document.querySelector('.vcm-col[data-dir="downstream"][data-tier="1"] .vcm-cluster[data-disclosed="1"]'),
+    tags: document.querySelectorAll('#vcm-grid .disc-tag').length,
+    legend: document.querySelector('.map-wrap .map-legend')?.textContent || '',
+    solid: paths.filter((p) => p.w >= 2.2 && !p.dash).length,
+    dashed: paths.filter((p) => p.dash).length,
+  };
+})())`));
+check('价值链地图披露层：宁德上游「披露·供应商」+ 下游「披露·客户」集群叠入一级列（披露徽记在场）',
+  vcm.discUp && vcm.discDn && vcm.discClusters >= 2 && vcm.tags >= 2,
+  JSON.stringify({ up: vcm.discUp, dn: vcm.discDn, n: vcm.discClusters, tags: vcm.tags }));
+check('价值链地图披露层：披露边实线加粗 vs 推断边虚线 + 图例（实线=年报披露）',
+  vcm.solid >= 2 && vcm.dashed >= 1
+    && vcm.legend.includes('年报披露') && vcm.legend.includes('虚线'),
+  JSON.stringify({ solid: vcm.solid, dashed: vcm.dashed, legend: vcm.legend }));
+
+// 000019：conc 有但 customers/suppliers/rev 全空 → 反向区块不出现，正向降级文案保留
+await evaluate(`location.href = ${JSON.stringify(BASE + '#/c/000019')}`);
+await waitFor(`!!document.querySelector('.sup-sec')`);
+const rev2 = JSON.parse(await evaluate(`JSON.stringify({
+  rev: !!document.querySelector('.sup-rev'),
+  revHead: !!document.querySelector('.sup-rev-head'),
+  anon: !!document.querySelector('.sup-anon'),
+})`));
+check('反向披露：000019 无任何 rev → 反向区块不出现（自曝匿名降级文案保留）',
+  rev2.rev === false && rev2.revHead === false && rev2.anon === true, JSON.stringify(rev2));
+
+// 000559 万向钱潮（非手工）：位置图披露公司卡（自曝 2 客户+1 供应商，据对方 2 客户）vs 行业虚线
+await evaluate(`location.href = ${JSON.stringify(BASE + '#/c/000559')}`);
+await waitFor(`!!document.querySelector('#posmap .pos-disc')`);
+await waitFor(`document.querySelectorAll('#pos-links path').length > 0`);
+const pos = JSON.parse(await evaluate(`JSON.stringify((() => {
+  const laneOf = (el) => el.closest('.pos-lane')?.dataset.dir;
+  const discs = [...document.querySelectorAll('#posmap .pos-disc')].map((el) => ({
+    lane: laneOf(el), href: el.getAttribute('href') }));
+  const paths = [...document.querySelectorAll('#pos-links path')].map((p) => ({
+    w: +p.getAttribute('stroke-width'), dash: p.getAttribute('stroke-dasharray') || '' }));
+  return {
+    upDisc: discs.filter((d) => d.lane === 'up').length,
+    dnDisc: discs.filter((d) => d.lane === 'down').length,
+    hrefs: discs.map((d) => d.href),
+    tags: document.querySelectorAll('#posmap .disc-tag').length,
+    legend: document.querySelector('.map-legend')?.textContent || '',
+    solid: paths.filter((p) => p.w >= 2.2 && !p.dash).length,
+    dashed: paths.filter((p) => p.dash).length,
+  };
+})())`));
+check('位置图披露层：000559 上游 1 家 + 下游 4 家披露公司卡（自曝+据对方，按代码去重）',
+  pos.upDisc === 1 && pos.dnDisc === 4 && pos.tags === 5
+    && pos.hrefs.includes('#/c/002594') && pos.hrefs.includes('#/c/000708')
+    && pos.hrefs.includes('#/c/002406') && pos.hrefs.includes('#/c/000572'),
+  JSON.stringify({ up: pos.upDisc, dn: pos.dnDisc, hrefs: pos.hrefs }));
+check('位置图披露层：披露卡实线加粗连锚点 vs 行业卡虚线 + 图例（实线=年报披露 · 虚线=行业推断）',
+  pos.solid === 5 && pos.dashed >= 1
+    && pos.legend.includes('年报披露') && pos.legend.includes('行业推断'),
+  JSON.stringify({ solid: pos.solid, dashed: pos.dashed, legend: pos.legend }));
 
 console.log('— 价值链地图导出 PNG（002594 手工档案）—');
 await evaluate(`location.href = ${JSON.stringify(BASE + '#/c/002594')}`);

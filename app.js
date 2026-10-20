@@ -2121,6 +2121,44 @@ function bandColor(dir, tier) {
   return cssVar(tier === 1 ? "--band-dn1" : "--band-dn2", "#2B2115");
 }
 
+/* 年报披露对手方（正向自曝 + 反向据对方披露），价值链地图与位置图共用这一份「披露层」。
+   up = 我的供应商（自曝 suppliers + 对方把我列为客户 rev.asSupplierOf）；
+   dn = 我的客户（自曝 customers + 对方把我列为供应商 rev.asCustomerOf）。
+   按 code 去重，自曝优先于据对方（同年报直接来源）；返回 null 表示没有披露层。 */
+function disclosedLanes(ticker) {
+  const rec = ticker ? supplyData?.companies?.[ticker] : null;
+  if (!rec) return null;
+  const concYear = rec.conc?.year || null;
+  const up = [], dn = [], seen = new Set();
+  const push = (list, e, code, self) => {
+    if (!code || seen.has(code)) return;
+    seen.add(code);
+    list.push({ code, name: e.name, ratio: Number.isFinite(e.ratio) ? e.ratio : null, year: self ? concYear : (e.year || null), self });
+  };
+  for (const e of rec.suppliers || []) push(up, e, e.code, true);
+  for (const e of rec.rev?.asSupplierOf || []) push(up, e, e.from, false);
+  for (const e of rec.customers || []) push(dn, e, e.code, true);
+  for (const e of rec.rev?.asCustomerOf || []) push(dn, e, e.from, false);
+  return up.length || dn.length ? { up, dn } : null;
+}
+
+// 披露卡/节点的口径小字：占本公司营收/采购（自曝）、占对方营收/采购（据对方）
+function discScope(p, dir) {
+  const key = p.self
+    ? (dir === "upstream" ? "vcm.scopeOwnProc" : "vcm.scopeOwnRev")
+    : (dir === "upstream" ? "vcm.scopePeerRev" : "vcm.scopePeerProc");
+  const zh = p.self
+    ? (dir === "upstream" ? "占本公司采购" : "占本公司营收")
+    : (dir === "upstream" ? "占对方营收" : "占对方采购");
+  return t(key, zh);
+}
+function discNote(p, dir, withPct = true) {
+  let s = discScope(p, dir);
+  if (withPct && p.ratio != null) s += ` ${fmtPct(p.ratio * 100, false)}`;
+  if (p.year) s += ` · ${t("sup.concYear", "{y} 年报").replace("{y}", p.year)}`;
+  return s;
+}
+
 function buildClusters(nodes) {
   const map = new Map();
   for (const n of nodes) {
@@ -2144,19 +2182,22 @@ function mapCard(n) {
           <span class="dep-bar"><span class="dep-fill" style="width:${clamp(n.depPct, 0, 100)}%;background:${color}"></span></span>
           <span class="dep-val" style="color:${color}">${esc(fmtNum(n.depPct, 1))}%</span>
         </span>` : "";
+  const disc = n.disclosed
+    ? `<span class="disc-tag" title="${esc(t("vcm.discTagTip", "年报披露的真实往来"))}">${esc(t("vcm.discTag", "披露"))}</span>` : "";
   return `
     <div class="vcm-card">
-      <a class="map-node is-linked" href="#/c/${encodeURIComponent(n.ticker)}" style="border-left-color:${color}">
+      <a class="map-node is-linked${n.disclosed ? " is-disc" : ""}" href="#/c/${encodeURIComponent(n.ticker)}" style="border-left-color:${color}">
         <span class="map-node-text">
-          <span class="map-node-name">${esc(n.name)}</span>
+          <span class="map-node-top"><span class="map-node-name">${esc(n.name)}</span>${disc}</span>
           <span class="map-node-role">${esc(n.role)}</span>
+          ${n.note ? `<span class="map-node-role">${esc(n.note)}</span>` : ""}
           <span class="seg">${esc(n.ticker)}</span>
           ${dep}
         </span>
         <span class="map-link-arrow" aria-hidden="true">↗</span>
       </a>
       <div class="vcm-tip" role="tooltip">
-        <span class="vcm-tip-ticker">${esc(n.ticker)} · ${esc(t("sector." + n.sector, n.sector))}</span>
+        <span class="vcm-tip-ticker">${esc(n.ticker)}${n.sector ? ` · ${esc(t("sector." + n.sector, n.sector))}` : ""}</span>
         <span class="vcm-tip-rel">${esc(n.name)} — ${esc(n.role)}</span>
       </div>
     </div>`;
@@ -2169,7 +2210,7 @@ function clusterHTML(c) {
   const rest = c.members.slice(1);
   return `
     <div class="vcm-cluster" data-key="${esc(c.key)}" data-dir="${esc(c.dir)}" data-tier="${esc(c.tier)}"
-         data-via="${esc(face.via || "")}"
+         data-via="${esc(face.via || "")}"${c.disclosed ? ` data-disclosed="1"` : ""}
          style="background:${tintFor(c.dir, c.tier)};border-color:${accent}">
       <button class="vcm-cluster-head" type="button" aria-expanded="${open}">
         <span class="vcm-cluster-title">${esc(c.group)}</span>
@@ -2182,10 +2223,42 @@ function clusterHTML(c) {
 }
 
 /* 价值链地图的数据模型：列 / 分组 / 卡片的纯数据，DOM 渲染与 PNG 导出共用。
-   列顺序：上游二级 → 上游一级 → 锚点 → 下游一级 →（无下游时的终端占位）→ 下游二级 */
+   列顺序：上游二级 → 上游一级 → 锚点 → 下游一级 →（无下游时的终端占位）→ 下游二级。
+   披露层注入：年报披露的对手方（disclosedLanes）以新分组叠进一级列——
+   已在图上的节点只补 disclosed 标记（披露优先于推断），不改动 data.nodes 本身；
+   全新对手方组成「披露 · 供应商/客户」分组，连线在绘制层按实线加粗处理。 */
 function vcmModel(data) {
-  const nodes = data.nodes || [];
+  const nodes = (data.nodes || []).slice();
+  const disc = disclosedLanes(data.anchor?.ticker);
+  if (disc) {
+    const at = new Map(nodes.map((n, i) => [n.ticker, i]));
+    const inject = (list, relation) => {
+      for (const p of list) {
+        const i = at.get(p.code);
+        if (i != null) {
+          if (!nodes[i].disclosed) nodes[i] = { ...nodes[i], disclosed: true };
+          continue;
+        }
+        const dir = relation;
+        nodes.push({
+          ticker: p.code, name: p.name, relation, tier: 1,
+          role: t(relation === "upstream" ? "vcm.discGrpUp" : "vcm.discGrpDn",
+            relation === "upstream" ? "披露 · 供应商" : "披露 · 客户"),
+          sector: "",
+          // 据对方披露的供应商占比 = 对方营收中来自锚点的份额，与 depOn（对锚点的收入占比）同口径，出依赖条；
+          // 其余三种口径写进 note 小字，不借用 depOn 免得误读
+          depPct: (!p.self && relation === "upstream" && p.ratio != null) ? p.ratio * 100 : null,
+          depAsOf: p.year ? String(p.year) : "",
+          note: discNote(p, dir, !(!p.self && relation === "upstream")),
+          disclosed: true,
+        });
+      }
+    };
+    inject(disc.up, "upstream");
+    inject(disc.dn, "downstream");
+  }
   const clusters = buildClusters(nodes);
+  for (const c of clusters) c.disclosed = c.members.length > 0 && c.members.every((m) => m.disclosed);
   const hasDown = nodes.some((n) => n.relation === "downstream");
   const colDef = (dir, tier) => {
     const cs = orderedClusters(clusters, dir, tier);
@@ -2205,7 +2278,15 @@ function vcmModel(data) {
     cols.push({ dir: "downstream", tier: 1, label: t("company.tierDown1", "下游 · 一级"), terminal: true, clusters: [] });
   }
   const dn2 = colDef("downstream", 2); if (dn2) cols.push(dn2);
-  return { anchor: data.anchor, cols };
+  return { anchor: data.anchor, cols, hasDisc: clusters.some((c) => c.disclosed) };
+}
+
+// 实线 = 年报披露 / 虚线 = 推断——两张图（手工价值链地图、行业位置图）共用同一图例语言
+function mapLegendHTML(dashKey, dashZh) {
+  return `<div class="map-legend">
+    <span class="map-legend-item"><i class="ml-solid"></i>${esc(t("vcm.legendSolid", "实线 = 年报披露"))}</span>
+    <span class="map-legend-item"><i class="ml-dash"></i>${esc(t(dashKey, dashZh))}</span>
+  </div>`;
 }
 
 function mapHTML(data) {
@@ -2259,7 +2340,8 @@ function mapHTML(data) {
           ${model.cols.map(colHTML).join("\n")}
         </div>
       </div>
-    </div>`;
+    </div>
+    ${model.hasDisc ? mapLegendHTML("vcm.legendDashCurated", "虚线 = 梳理推断") : ""}`;
 }
 
 // 适应宽度（"fit"）或原始尺寸 + 横向平移（"full"）
@@ -2368,6 +2450,8 @@ function drawMap() {
 
     [...col.querySelectorAll(".vcm-cluster")].forEach((cl) => {
       const cr = cl.getBoundingClientRect();
+      // 披露集群的连线是图上的「真边」：实线加粗高亮；推断边统一退成虚线底图
+      const disc = cl.dataset.disclosed === "1";
       let x1, y1, x2, y2;
 
       if (tier === 1) {
@@ -2395,7 +2479,7 @@ function drawMap() {
       const c1 = x1 + dx * dirSign;
       const c2 = x2 - dx * dirSign;
       paths += `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} C${c1.toFixed(1)} ${y1.toFixed(1)}, ${c2.toFixed(1)} ${y2.toFixed(1)}, ${x2.toFixed(1)} ${y2.toFixed(1)}"`
-        + ` pathLength="100" fill="none" stroke="${accent}" stroke-width="1.5" stroke-opacity="0.45" stroke-linecap="round"/>`;
+        + ` pathLength="100" fill="none" stroke="${accent}" stroke-width="${disc ? 2.4 : 1.5}" stroke-opacity="${disc ? 0.9 : 0.45}"${disc ? "" : ` stroke-dasharray="5 4"`} stroke-linecap="round"/>`;
     });
   });
   svg.innerHTML = paths;
@@ -2514,7 +2598,7 @@ function exportVcmPNG(data) {
         let my = cy + clusterHeadH + clusterPad;
         for (const m of c.members) {
           drawCard(cx + clusterPad, my, colW - clusterPad * 2,
-            m.name, `${m.role} · ${m.ticker}`, null);
+            m.name, `${m.role} · ${m.ticker}`, m.disclosed ? accent : null);
           my += cardH + cardGap;
         }
         edges.push({
@@ -2523,6 +2607,7 @@ function exportVcmPNG(data) {
           dir: col.dir, tier: col.tier,
           via: c.members[0] ? c.members[0].via : null,
           tickers: new Set(c.members.map((m) => m.ticker)),
+          disclosed: !!c.disclosed,
         });
         cy += chH + clusterGap;
       }
@@ -2545,9 +2630,17 @@ function exportVcmPNG(data) {
     }
     const dx = Math.max(6, Math.min(40, Math.abs(x2 - x1) * 0.4));
     const sign = x2 >= x1 ? 1 : -1;
+    // 与屏幕同一约定：披露边实线加粗，推断边虚线淡色
     ctx.strokeStyle = chainColor(e.dir, e.tier);
-    ctx.globalAlpha = 0.5;
-    ctx.lineWidth = 1.5;
+    if (e.disclosed) {
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 0.9;
+      ctx.lineWidth = 2.4;
+    } else {
+      ctx.setLineDash([5, 4]);
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 1.5;
+    }
     ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(x1, y1);
@@ -2555,13 +2648,16 @@ function exportVcmPNG(data) {
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
+  ctx.setLineDash([]);
 
   // 底部署名行
   ctx.fillStyle = FAINTC;
   ctx.font = `400 11px ${font}`;
   ctx.textAlign = "left";
-  ctx.fillText(t("vcm.exportFoot", "链谱 ChainAtlas · 数据截至 {d} · 上下游为推断示意")
-    .replace("{d}", indexData?.generatedAt || "—"), padX, H - 18);
+  let foot = t("vcm.exportFoot", "链谱 ChainAtlas · 数据截至 {d} · 上下游为推断示意")
+    .replace("{d}", indexData?.generatedAt || "—");
+  if (model.hasDisc) foot += ` · ${t("vcm.exportFootDisc", "实线为年报披露关系")}`;
+  ctx.fillText(foot, padX, H - 18);
 
   cv.toBlob((blob) => {
     if (blob) downloadBlob(blob, `${model.anchor.name}-${t("company.chainTitle", "价值链地图")}.png`);
@@ -2632,29 +2728,35 @@ function fmtWan(v) {
 }
 
 /* 客户与供应商（年报披露）：集中度行（标注披露年份 + 近 4 年客户集中度迷你趋势）
-   + 实名明细两列（code 非空链公司页）。明细为空 → 集中度行 + 降级小字；
-   整公司无数据 → ""（区块不出现）。 */
+   + 实名明细两列（code 非空链公司页）+ 反向披露两列（rev：交易对手年报里出现的本公司）。
+   明细为空 → 集中度行 + 降级小字；自曝与反向全无 → ""（区块不出现）。
+   反向语义：asSupplierOf = 对方把我列为其客户（对方是我的供应商，占比=占对方营收）；
+             asCustomerOf = 对方把我列为其供应商（对方是我的客户，占比=占对方采购）。 */
 function supplyHTML(ticker) {
   const rec = supplyData?.companies?.[ticker];
-  if (!rec || !rec.conc) return "";
-  const { year, top5C, top5S, concHist } = rec.conc;
+  const revAsSup = Array.isArray(rec?.rev?.asSupplierOf) ? rec.rev.asSupplierOf : [];
+  const revAsCust = Array.isArray(rec?.rev?.asCustomerOf) ? rec.rev.asCustomerOf : [];
+  const hasRev = revAsSup.length > 0 || revAsCust.length > 0;
+  if (!rec || (!rec.conc && !hasRev)) return "";
+  const { year, top5C, top5S, concHist } = rec.conc || {};
   const customers = Array.isArray(rec.customers) ? rec.customers : [];
   const suppliers = Array.isArray(rec.suppliers) ? rec.suppliers : [];
 
   // 集中度趋势比单点值更有信息量：近 4 年前五客户集中度 sparkline
   const hist = (Array.isArray(concHist) ? concHist : []).filter((h) => Number.isFinite(h?.[1]));
   const spark = hist.length >= 2 ? sparkSVG(hist.map((h) => h[1]), 120, 30) : "";
-  const concRow = `<div class="sup-conc">
+  const concRow = rec.conc ? `<div class="sup-conc">
       <span class="sup-conc-item">${esc(t("sup.top5C", "前五客户集中度"))} <b>${esc(fmtPct(top5C * 100, false))}</b></span>
       <span class="sup-conc-item">${esc(t("sup.top5S", "前五供应商集中度"))} <b>${esc(fmtPct(top5S * 100, false))}</b></span>
       <span class="sup-conc-year">${esc(t("sup.concYear", "{y} 年报").replace("{y}", year))}</span>
       ${spark ? `<span class="sup-conc-trend" title="${esc(t("sup.concTrend", "前五客户集中度（{r}）")
         .replace("{r}", `${hist[0][0]}–${hist[hist.length - 1][0]}`))}">${spark}</span>` : ""}
-    </div>`;
+    </div>` : "";
 
+  const yearTag = year ? t("sup.yearTag", "{y} 年报披露").replace("{y}", year) : "";
   const detailCol = (titleKey, titleZh, rows) => `
     <div class="sup-col">
-      <div class="sup-col-title">${esc(t(titleKey, titleZh))}<span class="cf-meta">${esc(t("sup.yearTag", "{y} 年报披露").replace("{y}", year))}</span></div>
+      <div class="sup-col-title">${esc(t(titleKey, titleZh))}${yearTag ? `<span class="cf-meta">${esc(yearTag)}</span>` : ""}</div>
       <table class="sup-table">
         <tr><th>${esc(t("sup.colName", "名称"))}</th>
             <th class="num">${esc(t("sup.colRatio", "占比"))}</th>
@@ -2671,6 +2773,29 @@ function supplyHTML(ticker) {
   if (customers.length) cols.push(detailCol("sup.customers", "客户", customers));
   if (suppliers.length) cols.push(detailCol("sup.suppliers", "供应商", suppliers));
 
+  // 反向披露：交易对手年报里实名出现的本公司。占比口径是「占对方」（营收/采购），
+  // 各行披露年份随对方年报走（与本公司自曝年份无关），所以逐行标注。
+  const revCol = (titleKey, titleZh, metaKey, metaZh, rows) => `
+    <div class="sup-col">
+      <div class="sup-col-title">${esc(t(titleKey, titleZh))}<span class="cf-meta">${esc(t(metaKey, metaZh))}</span></div>
+      <table class="sup-table">
+        <tr><th>${esc(t("sup.colName", "名称"))}</th>
+            <th class="num">${esc(t("sup.colRatio", "占比"))}</th>
+            <th class="num">${esc(t("sup.colAmount", "金额"))}</th>
+            <th class="num">${esc(t("sup.colYear", "披露"))}</th></tr>
+        ${rows.map((e) => `<tr><td><a class="sup-name" href="#/c/${encodeURIComponent(e.from)}">${esc(e.name)}</a></td>
+          <td class="num">${esc(e.ratio != null ? fmtPct(e.ratio * 100, false) : "—")}</td>
+          <td class="num sup-amt">${esc(fmtWan(e.amount))}</td>
+          <td class="num sup-year">${e.year ? esc(t("sup.concYear", "{y} 年报").replace("{y}", e.year)) : "—"}</td></tr>`).join("")}
+      </table>
+    </div>`;
+  const revCols = [];
+  if (revAsSup.length) revCols.push(revCol("sup.revUp", "谁是我的供应商", "sup.revUpMeta", "据对方年报披露 · 占比为占对方营收比", revAsSup));
+  if (revAsCust.length) revCols.push(revCol("sup.revDown", "谁是我的客户", "sup.revDownMeta", "据对方年报披露 · 占比为占对方采购比", revAsCust));
+
+  // 零自曝（本公司年报只给「客户一」式匿名或干脆没提）时的过渡句
+  const noSelf = !customers.length && !suppliers.length && hasRev;
+
   return `
     <section class="sec sup-sec">
       <div class="sec-head">
@@ -2681,9 +2806,15 @@ function supplyHTML(ticker) {
       ${concRow}
       ${cols.length
         ? `<div class="sup-grid">${cols.join("")}</div>`
-        : `<p class="sec-sub sup-anon">${esc(t("sup.anon", "该公司未披露实名客户/供应商"))}</p>`}
+        : (noSelf ? "" : `<p class="sec-sub sup-anon">${esc(t("sup.anon", "该公司未披露实名客户/供应商"))}</p>`)}
+      ${noSelf ? `<p class="sup-no-self">${esc(t("sup.noSelf", "该公司未自曝实名客户/供应商，以下据交易对手年报披露"))}</p>` : ""}
+      ${revCols.length ? `
+        <div class="sup-rev-head">${esc(t("sup.revTitle", "据交易对手年报披露"))}</div>
+        <div class="sup-rev">${revCols.join("")}</div>` : ""}
       <p class="sec-sub sup-note">${esc(t("sup.note",
         "来自上市公司年报披露（学术数据集整理），仅含实名披露的对手方；披露节奏为公司自曝，年份可能滞后"))}</p>
+      ${revCols.length ? `<p class="sec-sub sup-note sup-rev-note">${esc(t("sup.revNote",
+        "「据对方披露」来自交易对手年报：对方将本公司列为其客户/供应商；占比均为占对方营收/采购比"))}</p>` : ""}
     </section>`;
 }
 
@@ -2704,14 +2835,16 @@ function curatedMapSection(data) {
 }
 
 /* 行业级产业链位置图（没有手工档案的公司）：
-   只用两类真实数据——步进表（行业间原料流向的产业常识）和环节归属（公开归类）。
-   上游/下游列的是「行业」而不是具体公司，不出现虚构的供货连线。 */
+   底图是两类真实数据——步进表（行业间原料流向的产业常识）和环节归属（公开归类），
+   行业卡到锚点用虚线（推断）；年报披露的对手方公司卡叠在行业卡之前，
+   实线加粗连到锚点 + 「披露」小标记（真边），披露与推断一眼可分。 */
 function posMapHTML(a) {
   const { up, down } = stepsOf(a.industry);
+  const disc = disclosedLanes(a.ticker);
   const indBoards = (ni) => (graphData && graphData.industries[ni] ? indChainDist(ni) : []).slice(0, 3);
   const indRows = (rows, dir) => rows.map(({ ind: ni, role }) => {
     const boards = indBoards(ni);
-    return `<div class="pos-ind" style="background:${tintFor(dir, 1)}">
+    return `<div class="pos-ind pos-link-src" style="background:${tintFor(dir, 1)}">
         <a class="pos-ind-head" href="#/i/${encodeURIComponent(ni)}">
           <span class="pos-ind-name">${esc(t("sector." + ni, ni))}</span>
           <span class="pos-ind-role">${esc(role)}</span>
@@ -2722,6 +2855,15 @@ function posMapHTML(a) {
         : ""}
       </div>`;
   }).join("");
+  // 披露公司卡：实色左条 + 「披露」标记，占比口径（占本公司/占对方）写进小字
+  const discCards = (list, dir) => (list || []).map((p) => `
+      <a class="map-node is-linked pos-disc pos-link-src" href="#/c/${encodeURIComponent(p.code)}" style="border-left-color:${linkColor(dir, 1)}">
+        <span class="map-node-text">
+          <span class="map-node-top"><span class="map-node-name">${esc(p.name)}</span><span class="disc-tag">${esc(t("vcm.discTag", "披露"))}</span></span>
+          <span class="map-node-role">${esc(discNote(p, dir))}</span>
+        </span>
+        <span class="map-link-arrow" aria-hidden="true">↗</span>
+      </a>`).join("");
   const myBoards = boardsOf(a.ticker);
   const selfBoards = myBoards.length
     ? myBoards.map((b) => `<button class="chip" type="button" data-psearch="${esc(b)}">${esc(b)}<span class="chip-n">${esc(fmtInt((graphData?.boards?.[b] || []).length))}</span></button>`).join("")
@@ -2736,8 +2878,10 @@ function posMapHTML(a) {
       </div>
       <p class="chain-caveat">${esc(t("company.posCaveat", "⚠ 上下游为行业级公开关系示意（产业常识中的原料流向），环节归属为真实公开归类；不代表具体公司间的供货关系。"))}</p>
       <div class="posmap" id="posmap">
+        <svg class="pos-links" id="pos-links" aria-hidden="true"></svg>
         <div class="pos-lane" data-dir="up">
           <div class="tier-label">${esc(t("company.posUp", "上游 · 供给来源"))}</div>
+          ${disc ? discCards(disc.up, "upstream") : ""}
           ${up.length ? indRows(up, "upstream") : empty("company.posNoUp", "步进表暂无上游行业记录")}
         </div>
         <div class="pos-lane pos-self">
@@ -2752,14 +2896,66 @@ function posMapHTML(a) {
         </div>
         <div class="pos-lane" data-dir="down">
           <div class="tier-label">${esc(t("company.posDown", "下游 · 需求去向"))}</div>
+          ${disc ? discCards(disc.dn, "downstream") : ""}
           ${down.length ? indRows(down, "downstream") : `
-            <div class="pos-ind" style="background:${tintFor("downstream", 1)}">
+            <div class="pos-ind pos-link-src" style="background:${tintFor("downstream", 1)}">
               <div class="pos-ind-head"><span class="pos-ind-name">${esc(t("company.terminalName", "终端市场"))}</span></div>
             </div>
             ${empty("company.posNoDown", "步进表暂无下游行业记录")}`}
         </div>
       </div>
+      <div class="map-legend">
+        ${disc ? `<span class="map-legend-item"><i class="ml-solid"></i>${esc(t("vcm.legendSolid", "实线 = 年报披露"))}</span>` : ""}
+        <span class="map-legend-item"><i class="ml-dash"></i>${esc(t("vcm.legendDashInfer", "虚线 = 行业推断"))}</span>
+      </div>
     </section>`;
+}
+
+/* 位置图连线层：行业卡 → 锚点虚线（推断底图），披露公司卡 → 锚点实线加粗（真边）。
+   桌面三列横连、窄屏单列纵连——按卡片与锚点的相对位置现算，两种布局都成立。 */
+function drawPosMapLinks() {
+  const wrap = document.getElementById("posmap");
+  const svg = document.getElementById("pos-links");
+  const anchor = wrap ? wrap.querySelector(".pos-anchor") : null;
+  if (!wrap || !svg || !anchor) return;
+  const W = wrap.scrollWidth, H = wrap.scrollHeight;
+  if (!W || !H) return;
+  const base = wrap.getBoundingClientRect();
+  const ar = anchor.getBoundingClientRect();
+  const aCx = (ar.left + ar.right) / 2 - base.left;
+  const aCy = (ar.top + ar.bottom) / 2 - base.top;
+  const aL = ar.left - base.left, aR = ar.right - base.left;
+  const aT = ar.top - base.top, aB = ar.bottom - base.top;
+  let paths = "";
+  wrap.querySelectorAll(".pos-link-src").forEach((el) => {
+    const r = el.getBoundingClientRect();
+    const cx = (r.left + r.right) / 2 - base.left;
+    const cy = (r.top + r.bottom) / 2 - base.top;
+    const dir = el.closest(".pos-lane")?.dataset.dir === "up" ? "upstream" : "downstream";
+    const color = linkColor(dir, 1);
+    const disc = el.classList.contains("pos-disc");
+    let x1, y1, x2, y2, c1x, c1y, c2x, c2y;
+    if (Math.abs(cx - aCx) >= Math.abs(cy - aCy)) {
+      const left = cx < aCx;
+      x1 = left ? r.right - base.left : r.left - base.left; y1 = cy;
+      x2 = left ? aL : aR; y2 = aCy;
+      const dx = Math.max(6, Math.min(36, Math.abs(x2 - x1) * 0.4));
+      const s = x2 >= x1 ? 1 : -1;
+      c1x = x1 + dx * s; c1y = y1; c2x = x2 - dx * s; c2y = y2;
+    } else {
+      const above = cy < aCy;
+      x1 = cx; y1 = above ? r.bottom - base.top : r.top - base.top;
+      x2 = aCx; y2 = above ? aT : aB;
+      const dy = Math.max(6, Math.min(36, Math.abs(y2 - y1) * 0.4));
+      const s = y2 >= y1 ? 1 : -1;
+      c1x = x1; c1y = y1 + dy * s; c2x = x2; c2y = y2 - dy * s;
+    }
+    paths += `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} C${c1x.toFixed(1)} ${c1y.toFixed(1)}, ${c2x.toFixed(1)} ${c2y.toFixed(1)}, ${x2.toFixed(1)} ${y2.toFixed(1)}"`
+      + ` fill="none" stroke="${color}" stroke-width="${disc ? 2.4 : 1.4}" stroke-opacity="${disc ? 0.9 : 0.4}"${disc ? "" : ` stroke-dasharray="5 4"`} stroke-linecap="round"/>`;
+  });
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.innerHTML = paths;
 }
 
 /* 近一年走势图（公司页，行情指标区之后）：纯 SVG，viewBox 定死、宽 100% 自适应。
@@ -3522,8 +3718,9 @@ function renderCompany(data) {
 
   requestAnimationFrame(() => {
     drawMap();
+    drawPosMapLinks();
     // 等 web font / 图片稳定后再量一次，避免首帧量到的高度偏小
-    setTimeout(drawMap, 220);
+    setTimeout(() => { drawMap(); drawPosMapLinks(); }, 220);
   });
 }
 
@@ -5242,8 +5439,9 @@ async function boot() {
   });
 
   window.addEventListener("resize", () => {
-    if (parseRoute().name === "company" && document.getElementById("vcm-map")) {
-      requestAnimationFrame(drawMap);
+    if (parseRoute().name === "company") {
+      if (document.getElementById("vcm-map")) requestAnimationFrame(drawMap);
+      if (document.getElementById("posmap")) requestAnimationFrame(drawPosMapLinks);
     }
   });
 
