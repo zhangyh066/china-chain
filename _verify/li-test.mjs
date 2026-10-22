@@ -1,5 +1,6 @@
-// 产业链看板走查：18 条链全量（老 8 条 #/li #/pv #/semi #/robot #/compute #/storage #/pharma #/auto
-// + 新 10 条 #/military #/food #/appliance #/chem #/metal #/grid #/celec #/agri #/cement #/steel）
+// 产业链看板走查：27 条链全量（老 8 条 #/li #/pv #/semi #/robot #/compute #/storage #/pharma #/auto
+// + 第二批 10 条 #/military #/food #/appliance #/chem #/metal #/grid #/celec #/agri #/cement #/steel
+// + 第三批 9 条 #/coal #/wind #/textile #/mach #/meddev #/comm #/home #/paper #/beauty）
 // 每条链：结构断言（标题/卡数/迷你图数 == 有非空序列阶段数/来源注记/纯度徽章）+ EN 翻译
 // + 移动端无溢出；价格图断言按 data/price/{key}.json 是否存在条件化。
 // 预期全部从数据文件推导（补抓期间个别阶段序列可能为空 → 降级占位；补齐后全出图）。
@@ -32,6 +33,15 @@ const CHAINS = [
   { hash: '#/agri', key: 'agri' },
   { hash: '#/cement', key: 'cement' },
   { hash: '#/steel', key: 'steel' },
+  { hash: '#/coal', key: 'coal' },
+  { hash: '#/wind', key: 'wind' },
+  { hash: '#/textile', key: 'textile' },
+  { hash: '#/mach', key: 'mach' },
+  { hash: '#/meddev', key: 'meddev' },
+  { hash: '#/comm', key: 'comm' },
+  { hash: '#/home', key: 'home' },
+  { hash: '#/paper', key: 'paper' },
+  { hash: '#/beauty', key: 'beauty' },
 ];
 const chainData = {};
 const priceData = {};
@@ -491,7 +501,7 @@ const tmLagTxt = (st) => (st.lag > 0 ? `领先 ${st.lag} 日` : st.lag < 0 ? `�
     semi.val === false && semi.flow === true, JSON.stringify(semi));
 }
 
-// ---- 首页入口：18 张卡，标题来自各链 JSON meta，href 指向各链路由
+// ---- 首页入口：27 张卡，标题来自各链 JSON meta，href 指向各链路由
 await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false });
 await send('Page.navigate', { url: BASE + '?fresh=' + Date.now() + '#/' });
 await sleep(2600);

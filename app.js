@@ -609,13 +609,16 @@ function loadIndustryTrends(ind) {
    顶层自带双语 meta：title/titleEn、sub/subEn，阶段自带 name/nameEn/desc/descEn），
    data/price/{key}.json（期货主力日线，有的链没有 → 价格区块自动不出现）。
    后台补抓期间个别环节序列可能还是 []——渲染层按"数据补齐中"降级，不算错。
-   缺失/断网静默降级。18 条链：老 8 条路由别名历史沿用（li=lithium），新 10 条 hash 与 key 同名。 */
+   缺失/断网静默降级。27 条链：老 8 条路由别名历史沿用（li=lithium），新 19 条 hash 与 key 同名。 */
 const CHAIN_KEYS = ["lithium", "pv", "semi", "robot", "compute", "storage", "pharma", "auto",
-  "military", "food", "appliance", "chem", "metal", "grid", "celec", "agri", "cement", "steel"];
+  "military", "food", "appliance", "chem", "metal", "grid", "celec", "agri", "cement", "steel",
+  "coal", "wind", "textile", "mach", "meddev", "comm", "home", "paper", "beauty"];
 const CHAIN_ROUTE = {
   li: "lithium", pv: "pv", semi: "semi", robot: "robot", compute: "compute", storage: "storage", pharma: "pharma", auto: "auto",
   military: "military", food: "food", appliance: "appliance", chem: "chem", metal: "metal",
   grid: "grid", celec: "celec", agri: "agri", cement: "cement", steel: "steel",
+  coal: "coal", wind: "wind", textile: "textile", mach: "mach", meddev: "meddev",
+  comm: "comm", home: "home", paper: "paper", beauty: "beauty",
 };
 const chainBoardCache = new Map(); // key → Promise<data|null>
 const chainBoardData = new Map();  // key → 已落地的数据（首页入口卡同步读取用）
@@ -788,7 +791,7 @@ function parseRoute() {
     };
   }
   if (h === "vision") return { name: "vision" };
-  // 产业链看板：18 条链，路由表见 CHAIN_ROUTE（#/li 是锂的旧链接，保留）
+  // 产业链看板：27 条链，路由表见 CHAIN_ROUTE（#/li 是锂的旧链接，保留）
   if (CHAIN_ROUTE[h]) return { name: "chain", chainKey: CHAIN_ROUTE[h] };
   // "atlas" 是"全景图谱"的旧名字，留着旧链接不失效
   if (h === "worldmap" || h === "atlas") return { name: "worldmap" };
@@ -1576,12 +1579,14 @@ function boardTempHTML() {
   </div>`;
 }
 
-/* 首页的产业链看板入口：一个区块 18 张卡，标题/sub 读各链
+/* 首页的产业链看板入口：一个区块 27 张卡，标题/sub 读各链
    JSON 自带的双语 meta；某条链 404 就跳过那张卡。数据是异步的，正文先放
    占位槽，渲染完后由 renderChainEntries 填进来（已缓存时同步填充无闪烁）。 */
 const CHAIN_HASH = { lithium: "#/li", pv: "#/pv", semi: "#/semi", robot: "#/robot", compute: "#/compute", storage: "#/storage", pharma: "#/pharma", auto: "#/auto",
   military: "#/military", food: "#/food", appliance: "#/appliance", chem: "#/chem", metal: "#/metal",
-  grid: "#/grid", celec: "#/celec", agri: "#/agri", cement: "#/cement", steel: "#/steel" };
+  grid: "#/grid", celec: "#/celec", agri: "#/agri", cement: "#/cement", steel: "#/steel",
+  coal: "#/coal", wind: "#/wind", textile: "#/textile", mach: "#/mach", meddev: "#/meddev",
+  comm: "#/comm", home: "#/home", paper: "#/paper", beauty: "#/beauty" };
 function chainEntriesHTML() {
   const cards = CHAIN_KEYS.map((k) => {
     const d = chainBoardData.get(k);
@@ -3248,7 +3253,7 @@ function rerenderCompanyTrend() {
   if (slot && histCtx) slot.innerHTML = companyTrendInnerHTML();
 }
 
-/* ---- 产业链看板（18 条链，路由见 CHAIN_ROUTE） ---------------------------------
+/* ---- 产业链看板（27 条链，路由见 CHAIN_ROUTE） ---------------------------------
    页面结构由数据驱动：标题/sub/阶段名/简介全部读 chain JSON 的双语 meta；
    只有布局（哪些阶段进主流线、哪些是配套排）按链配置——
    主流线里的子数组表示 2×2 子格（锂电的四大主材）。未配置的链回退为全部阶段一字排开。
@@ -3361,6 +3366,53 @@ const CHAIN_LAYOUTS = {
   // 钢铁：上游铁矿石 → 中游长材/板材/特钢并列 → 下游钢管
   steel: {
     main: ["ore", ["long", "flat", "special"], "pipe"],
+    side: [],
+  },
+  // 煤炭：采掘 → 焦化 → 煤电联营；煤机装备是配套
+  coal: {
+    main: ["mining", "coke", "power"],
+    side: [
+      { label: ["cboard.support", "配套"], keys: ["equip"] },
+    ],
+  },
+  // 风电：上游叶片/塔筒并列 → 中游传动铸件/海缆并列 → 整机 → 风电场运营
+  wind: {
+    main: [["blade", "tower"], ["drive", "cable"], "oem", "operator"],
+    side: [],
+  },
+  // 纺织：上游纤维/纱线并列 → 中游面料/印染并列 → 下游成衣家纺
+  textile: {
+    main: [["fiber", "yarn"], ["fabric", "dyeing"], "apparel"],
+    side: [],
+  },
+  // 工程机械：上游液压密封件 → 中游五大主机品类并列（2 列子格）
+  mach: {
+    main: ["parts", ["earthwork", "crane", "concrete", "awp", "forklift"]],
+    side: [],
+  },
+  // 医疗器械：上游设备 → 中游高值/低值耗材 + IVD 并列 → 下游流通与检验服务
+  meddev: {
+    main: ["equipment", ["high_consumable", "low_consumable", "ivd"], "service"],
+    side: [],
+  },
+  // 通信：上游光纤光缆 → 中游天线射频/光器件并列 → 主设备 → 下游运营商
+  comm: {
+    main: ["fiber_cable", ["antenna_rf", "optical"], "main_equip", "operator"],
+    side: [],
+  },
+  // 家居：定制/软体/卫浴三大品类并列 → 下游地板
+  home: {
+    main: [["custom", "soft", "bath"], "floor"],
+    side: [],
+  },
+  // 造纸包装：上游纸浆与文化纸 → 中游包装纸/特种纸并列 → 下游包装印刷
+  paper: {
+    main: ["pulp_culture", ["pack_paper", "special"], "printing"],
+    side: [],
+  },
+  // 化妆品医美：上游原料/中游代工并列 → 下游品牌/医美并列
+  beauty: {
+    main: [["material", "oem"], ["brand", "med_beauty"]],
     side: [],
   },
 };
