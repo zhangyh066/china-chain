@@ -1578,33 +1578,45 @@ html:not([data-boot="on"]) .boot-console { display: none; }
 .li-entry-sub { font-size: 12.5px; color: var(--text-faint); flex: 1; }
 .li-entry .arr { color: var(--primary); }
 
-/* 链条流程：主流线 flex 横排（卡数随链而定，2×2 子格占两份宽），配套/循环第二排 */
-.li-flow-main {
-  display: flex; gap: 10px; align-items: stretch;
+/* 链条层级带（flow 链）：自上而下 上游→中游→下游→配套，带间垂直流向箭头 ↓。
+   层级一眼可辨：上游/下游带分别用供应链方向色微染（--band-up1/--band-dn1），
+   中游中性底；配套带虚线框 + 无底色，弱化在主流向之外。 */
+.li-tier {
+  display: flex; gap: 14px; align-items: flex-start;
+  padding: 12px 14px;
+  background: var(--surface-soft); border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
-.li-flow-main > .li-card { flex: 1 1 0; }
-.li-flow-main > .li-mats { flex: 2 1 0; }
-.li-flow-side {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+.li-tier[data-tier="up"] { background: var(--band-up1); }
+.li-tier[data-tier="down"] { background: var(--band-dn1); }
+.li-tier.is-support { background: transparent; border-style: dashed; }
+.li-tier-arrow {
+  align-self: center; padding: 3px 0; line-height: 1;
+  color: var(--text-faint); font-family: var(--mono); font-size: 14px;
+}
+.li-tier-lbl {
+  flex: none; width: 64px; padding-top: 6px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.li-tier-lbl b { font-size: 15px; font-weight: 700; color: var(--text); }
+.li-tier-lbl small {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em;
+  color: var(--text-faint); white-space: nowrap;
+}
+.li-tier[data-tier="up"] .li-tier-lbl b { color: var(--up1); }
+.li-tier[data-tier="down"] .li-tier-lbl b { color: var(--dn1); }
+.li-tier.is-support .li-tier-lbl b { color: var(--text-faint); font-weight: 600; }
+.li-tier-cards {
+  flex: 1; min-width: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 10px;
-  margin-top: 10px;
 }
-.li-support-cards {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+
+/* 品类分区（category 链）：阶段是并列品类，无层级带、无流向箭头 */
+.li-cats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 10px;
 }
-.li-arrow {
-  align-self: center; color: var(--text-faint);
-  font-family: var(--mono); font-size: 14px;
-}
-.li-mats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-/* 3 张并列的子格（如汽车上游三件套）：一行三列，不留 2×2 的空角 */
-.li-mats-3 { grid-template-columns: repeat(3, 1fr); }
-.li-side-lbl {
-  margin: 0 0 6px; font-size: 11px; color: var(--text-faint);
-  font-family: var(--mono); letter-spacing: 0.08em;
-}
-.li-support .li-card { border-style: dashed; height: 100%; box-sizing: border-box; }
 
 /* 阶段卡片：终端风 1px 细边、锐利边角 */
 .li-card {
@@ -1702,17 +1714,14 @@ html:not([data-boot="on"]) .boot-console { display: none; }
 .em-sec-body { margin: 0; font-size: 13px; line-height: 1.8; color: var(--text-soft); }
 .em-sec-body strong { color: var(--text); font-weight: 600; }
 
-@media (max-width: 1100px) {
-  .li-flow-main { flex-wrap: wrap; }
-  .li-flow-main > .li-card { flex: 1 1 calc(50% - 10px); }
-  .li-flow-main > .li-mats { flex: 1 1 100%; }
-  .li-mats-3 { grid-template-columns: 1fr 1fr; }
-  .li-flow-main .li-arrow { display: none; }
-}
 @media (max-width: 700px) {
-  .li-flow-main > .li-card { flex: 1 1 100%; }
-  .li-mats { grid-template-columns: 1fr; }
-  .li-flow-side { grid-template-columns: 1fr; }
+  /* 层级带改竖排：标签在带上沿（不丢），带内阶段卡单列堆叠；↓ 箭头保留 */
+  .li-tier { flex-direction: column; gap: 8px; }
+  .li-tier-lbl {
+    width: auto; padding-top: 0;
+    flex-direction: row; align-items: baseline; gap: 8px;
+  }
+  .li-tier-cards, .li-cats { grid-template-columns: 1fr; width: 100%; }
 }
 
 /* 对比按钮：公司页药丸 + 同行表小圆钮（选中态与自选星标同一套金色语义） */

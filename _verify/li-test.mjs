@@ -1,7 +1,7 @@
 // 产业链看板走查：27 条链全量（老 8 条 #/li #/pv #/semi #/robot #/compute #/storage #/pharma #/auto
 // + 第二批 10 条 #/military #/food #/appliance #/chem #/metal #/grid #/celec #/agri #/cement #/steel
 // + 第三批 9 条 #/coal #/wind #/textile #/mach #/meddev #/comm #/home #/paper #/beauty）
-// 每条链：结构断言（标题/卡数/迷你图数 == 有非空序列阶段数/来源注记/纯度徽章）+ EN 翻译
+// 每条链：结构断言（标题/卡数/层级带或品类分区/迷你图数 == 有非空序列阶段数/来源注记/纯度徽章）+ EN 翻译
 // + 移动端无溢出；价格图断言按 data/price/{key}.json 是否存在条件化。
 // 预期全部从数据文件推导（补抓期间个别阶段序列可能为空 → 降级占位；补齐后全出图）。
 import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
@@ -115,7 +115,12 @@ const STRUCT_EXPR = `JSON.stringify({
   coLinks: document.querySelectorAll('.li-co').length,
   pctBadges: document.querySelectorAll('.li-co-pct').length,
   purityNote: !!document.querySelector('.purity-note'),
-  arrows: document.querySelectorAll('.li-arrow').length,
+  tiers: [...document.querySelectorAll('.li-tier')].map((e) => e.dataset.tier),
+  bandCards: [...document.querySelectorAll('.li-tier')].map((e) => e.querySelectorAll('.li-card').length),
+  tierArrows: document.querySelectorAll('.li-tier-arrow').length,
+  supportMuted: !!document.querySelector('.li-tier.is-support'),
+  tierLbls: [...document.querySelectorAll('.li-tier-lbl b')].map((e) => e.textContent),
+  cats: document.querySelectorAll('.li-cats .li-card').length,
   moreBtns: document.querySelectorAll('[data-li-more]').length,
   transm: !!document.querySelector('.transm'),
   tmRows: document.querySelectorAll('.transm .tm-row').length,
@@ -132,6 +137,12 @@ for (const { hash, key } of CHAINS) {
   const expectPendingKeys = d.stages.filter((s) => !stageUsable(d, s)).map((s) => s.key).sort();
   const totalCos = d.stages.reduce((n, s) => n + (s.companies || []).length, 0);
   const expectMore = d.stages.filter((s) => (s.companies || []).length > 4).length;
+  // tier 带预期：category 链无带；flow 链按 up→mid→down→support 固定序，缺 tier 兜底中游
+  const tierOf = (s) => s.tier || 'mid';
+  const TIER_ORDER = ['up', 'mid', 'down', 'support'];
+  const expectTiers = d.mode === 'category' ? []
+    : TIER_ORDER.filter((t) => d.stages.some((s) => tierOf(s) === t));
+  const expectBandCards = expectTiers.map((t) => d.stages.filter((s) => tierOf(s) === t).length);
 
   // ---- 深色 + 中文结构断言（SPA 只改 hash 不重载，加 query 保证拿到新 app.js）
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false });
@@ -143,6 +154,20 @@ for (const { hash, key } of CHAINS) {
     `${st.title} / ${st.cards} 卡`);
   check(`[${key}] 卡标题与 JSON name 一一对应`,
     st.cardTitles.sort().join('|') === d.stages.map((s) => s.name).sort().join('|'));
+  // 层级带（flow）vs 品类分区（category）：DOM 结构与 JSON 的 mode/tier 逐链对账
+  if (d.mode === 'category') {
+    check(`[${key}] category 链：无层级带、无流向箭头，${d.stages.length} 个品类分区齐全`,
+      st.tiers.length === 0 && st.tierArrows === 0 && st.cats === d.stages.length,
+      `tiers=${st.tiers.length} arrows=${st.tierArrows} cats=${st.cats}`);
+  } else {
+    check(`[${key}] flow 链：层级带 ${expectTiers.join('→')}（带内卡数 ${expectBandCards.join('/')} == JSON）、带间 ↓ 箭头、配套带弱化`,
+      st.tiers.join(',') === expectTiers.join(',')
+        && st.bandCards.join(',') === expectBandCards.join(',')
+        && st.tierArrows === expectTiers.length - 1
+        && st.supportMuted === expectTiers.includes('support')
+        && st.tierLbls.length === expectTiers.length,
+      `tiers=${st.tiers.join(',')} cards=${st.bandCards.join(',')} arrows=${st.tierArrows} lbls=${st.tierLbls.join('|')}`);
+  }
   check(`[${key}] 迷你图数 == 有序列阶段数（${expectSpark}），占位卡 == 空序列阶段数（${expectPending}）`,
     st.sparks === expectSpark && st.pending === expectPending
       && st.pendingKeys.sort().join(',') === expectPendingKeys.join(','),
@@ -170,7 +195,7 @@ for (const { hash, key } of CHAINS) {
   }
   check(`[${key}] 公司链接 == 各阶段公司总数（${totalCos}），展开按钮 == 公司数>4 的卡数（${expectMore}）`,
     st.coLinks === totalCos && st.moreBtns === expectMore,
-    `links=${st.coLinks} more=${st.moreBtns} 箭头 ${st.arrows}`);
+    `links=${st.coLinks} more=${st.moreBtns} 带间箭头 ${st.tierArrows}`);
   // 纯度徽章：purity.json 覆盖的公司都应带三档标记之一（p% / 布局·未单列 / 未见披露）
   const expectBadges = d.stages.reduce((n, s) => n + (s.companies || [])
     .filter((c) => typeof purity.chains?.[key]?.[s.key]?.[c.code]?.p === 'number').length, 0);
@@ -231,17 +256,19 @@ for (const { hash, key } of CHAINS) {
   await shot(`${key}-en.png`);
   await evaluate(`localStorage.removeItem('cnchain.locale');1`);
 
-  // ---- 移动端 390：单列、无箭头、无横向溢出
+  // ---- 移动端 390：带内单列堆叠、层级标签不丢、无横向溢出
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
   await send('Page.navigate', { url: BASE + '?fresh=' + Date.now() + hash });
   await sleep(2400);
   const mob = JSON.parse(await evaluate(`JSON.stringify({
     cards: document.querySelectorAll('.li-card').length,
     noHScroll: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
-    arrows: [...document.querySelectorAll('.li-arrow')].filter((a) => getComputedStyle(a).display !== 'none').length
+    tierLbls: document.querySelectorAll('.li-tier-lbl').length,
+    cats: document.querySelectorAll('.li-cats .li-card').length
   })`));
-  check(`[${key}] 移动端 390：${d.stages.length} 卡、单列无箭头、无横向溢出`,
-    mob.cards === d.stages.length && mob.noHScroll && mob.arrows === 0, JSON.stringify(mob));
+  check(`[${key}] 移动端 390：${d.stages.length} 卡单列堆叠、层级标签 ${expectTiers.length} 个不丢、无横向溢出`,
+    mob.cards === d.stages.length && mob.noHScroll && mob.tierLbls === expectTiers.length,
+    JSON.stringify(mob));
   await shot(`${key}-mobile.png`);
 }
 

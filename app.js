@@ -3255,167 +3255,14 @@ function rerenderCompanyTrend() {
 
 /* ---- 产业链看板（27 条链，路由见 CHAIN_ROUTE） ---------------------------------
    页面结构由数据驱动：标题/sub/阶段名/简介全部读 chain JSON 的双语 meta；
-   只有布局（哪些阶段进主流线、哪些是配套排）按链配置——
-   主流线里的子数组表示 2×2 子格（锂电的四大主材）。未配置的链回退为全部阶段一字排开。
+   布局由 JSON 的 mode + tier 驱动，不再有按链的自由网格配置：
+   - mode=flow（22 条）：stage.tier ∈ up/mid/down/support → 自上而下四个层级带，
+     带间垂直流向箭头 ↓；support 带弱化（虚线框、中性色），与主流向区分。
+   - mode=category（food/metal/cement/home/meddev 5 条）：阶段是并列品类，
+     不宣称上下游——品类卡片网格，无层级带、无流向箭头。
    卡片 = 阶段名 + 公司数 + 简介 + 近一年迷你走势（序列为空 → "数据补齐中"占位）
    + 近一月涨跌幅 + 代表公司（默认前 4，"全部 N 家"展开，公司链到 #/c/{code}）。 */
-const CHAIN_LAYOUTS = {
-  // 锂：上游锂资源 → 前驱体 → 四大主材 → 电芯；设备配套、回收循环回上游
-  lithium: {
-    main: ["upstream_lithium", "precursor", ["cathode", "anode", "separator", "electrolyte"], "cell"],
-    side: [
-      { label: ["cboard.support", "配套"], keys: ["equipment"] },
-      { label: ["cboard.loopBack", "循环回上游"], suffix: " ↩", keys: ["recycling"] },
-    ],
-  },
-  // 光伏：硅料 → 硅片 → 电池片 → 组件；玻璃/胶膜是辅材，逆变器/设备是配套
-  pv: {
-    main: ["poly_silicon", "wafer", "cell_pv", "module"],
-    side: [
-      { label: ["cboard.materials", "辅材"], keys: ["glass", "film"] },
-      { label: ["cboard.support", "配套"], keys: ["inverter", "equipment_pv"] },
-    ],
-  },
-  // 半导体：设计 → 制造代工 → 封测；设备/材料/EDA 是上游支撑
-  semi: {
-    main: ["design", "foundry", "osat"],
-    side: [
-      { label: ["cboard.upstreamSupport", "上游支撑"], keys: ["equipment_semi", "material", "eda"] },
-    ],
-  },
-  // 机器人：四个上游零部件并列（2×2 子格）→ 执行器总成 → 本体，无配套排
-  robot: {
-    main: [["reducer", "servo", "screw", "sensor"], "actuator", "body"],
-    side: [],
-  },
-  // 算力：芯片 → 光模块 → PCB → 服务器；液冷温控/电源是配套
-  compute: {
-    main: ["chip", "optical", "pcb", "server"],
-    side: [
-      { label: ["cboard.support", "配套"], keys: ["cooling", "power"] },
-    ],
-  },
-  // 储能：电池 → PCS → 系统集成；温控是配套
-  storage: {
-    main: ["battery", "pcs", "integrate"],
-    side: [
-      { label: ["cboard.support", "配套"], keys: ["tempctrl"] },
-    ],
-  },
-  // 医药：原料药 → 中游四个并列（创新药/疫苗/中药/器械，2×2 子格）；CXO 是研发服务方
-  pharma: {
-    main: ["api", ["innovative", "vaccine", "tcm", "device"]],
-    side: [
-      { label: ["cboard.support", "配套"], keys: ["cxo"] },
-    ],
-  },
-  // 汽车：上游三个并列（轻量化/热管理/内外饰，1×3 子格）→ 汽车电子与智驾 → 整车
-  auto: {
-    main: [["lightweight", "thermal", "trim"], "electronics", "oem"],
-    side: [],
-  },
-  // 军工：上游材料 → 中游发动机/电子并列 → 下游四大装备平台 2×2
-  military: {
-    main: ["material", ["engine", "electronics"], ["aviation", "space", "ship", "ground"]],
-    side: [],
-  },
-  // 食品饮料：酒类三席并列 → 餐桌食品四席 2×2（呼应 sub 的「从酿造到餐桌」）
-  food: {
-    main: [["liquor", "beer", "wine"], ["dairy", "condiment", "snack", "meat"]],
-    side: [],
-  },
-  // 家电：上游核心零部件 → 中游白/黑/厨电并列 → 下游小家电/照明电工并列
-  appliance: {
-    main: ["parts", ["white", "black", "kitchen"], ["small", "lighting"]],
-    side: [],
-  },
-  // 化工：上游资源原料 → 中游五大子行业并列（2 列子格）→ 下游新材料/轮胎
-  chem: {
-    main: ["resource", ["phosphate", "fluorine", "pesticide", "fertilizer", "chlor_alkali"], ["new_material", "tire"]],
-    side: [],
-  },
-  // 有色：基本金属三席 / 贵金属与稀有金属三席并列；再生金属循环回上游
-  metal: {
-    main: [["copper", "aluminum", "lead_zinc"], ["gold", "rare_earth", "minor"]],
-    side: [
-      { label: ["cboard.loopBack", "循环回上游"], suffix: " ↩", keys: ["recycle"] },
-    ],
-  },
-  // 电网：一次设备 → 线缆/二次设备并列 → 计量/电网数字化并列
-  grid: {
-    main: ["transmission", ["cable", "secondary"], ["meter", "grid_it"]],
-    side: [],
-  },
-  // 消费电子：上中游六类零部件/模组并列（2 列子格）→ 组装代工 → 品牌终端
-  celec: {
-    main: [["parts", "acoustic", "optical", "display", "pcb", "passive"], "assembly", "brand"],
-    side: [],
-  },
-  // 农业：上游种苗/种植/饲料/动保 2×2 → 中游养殖 + 下游加工 2×2
-  agri: {
-    main: [["seed", "planting", "feed", "animal_health"], ["pig", "poultry", "fishery", "processing"]],
-    side: [],
-  },
-  // 建材：水泥/玻璃/骨料三大品类并列 → 消费建材；耐火材料是配套
-  cement: {
-    main: [["cement", "glass", "aggregate"], "consumer"],
-    side: [
-      { label: ["cboard.support", "配套"], keys: ["refractory"] },
-    ],
-  },
-  // 钢铁：上游铁矿石 → 中游长材/板材/特钢并列 → 下游钢管
-  steel: {
-    main: ["ore", ["long", "flat", "special"], "pipe"],
-    side: [],
-  },
-  // 煤炭：采掘 → 焦化 → 煤电联营；煤机装备是配套
-  coal: {
-    main: ["mining", "coke", "power"],
-    side: [
-      { label: ["cboard.support", "配套"], keys: ["equip"] },
-    ],
-  },
-  // 风电：上游叶片/塔筒并列 → 中游传动铸件/海缆并列 → 整机 → 风电场运营
-  wind: {
-    main: [["blade", "tower"], ["drive", "cable"], "oem", "operator"],
-    side: [],
-  },
-  // 纺织：上游纤维/纱线并列 → 中游面料/印染并列 → 下游成衣家纺
-  textile: {
-    main: [["fiber", "yarn"], ["fabric", "dyeing"], "apparel"],
-    side: [],
-  },
-  // 工程机械：上游液压密封件 → 中游五大主机品类并列（2 列子格）
-  mach: {
-    main: ["parts", ["earthwork", "crane", "concrete", "awp", "forklift"]],
-    side: [],
-  },
-  // 医疗器械：上游设备 → 中游高值/低值耗材 + IVD 并列 → 下游流通与检验服务
-  meddev: {
-    main: ["equipment", ["high_consumable", "low_consumable", "ivd"], "service"],
-    side: [],
-  },
-  // 通信：上游光纤光缆 → 中游天线射频/光器件并列 → 主设备 → 下游运营商
-  comm: {
-    main: ["fiber_cable", ["antenna_rf", "optical"], "main_equip", "operator"],
-    side: [],
-  },
-  // 家居：定制/软体/卫浴三大品类并列 → 下游地板
-  home: {
-    main: [["custom", "soft", "bath"], "floor"],
-    side: [],
-  },
-  // 造纸包装：上游纸浆与文化纸 → 中游包装纸/特种纸并列 → 下游包装印刷
-  paper: {
-    main: ["pulp_culture", ["pack_paper", "special"], "printing"],
-    side: [],
-  },
-  // 化妆品医美：上游原料/中游代工并列 → 下游品牌/医美并列
-  beauty: {
-    main: [["material", "oem"], ["brand", "med_beauty"]],
-    side: [],
-  },
-};
+const CHAIN_TIER_ORDER = ["up", "mid", "down", "support"];
 
 function sparkSVG(vals, W = 168, H = 36) {
   const n = vals.length;
@@ -3648,9 +3495,23 @@ async function renderChainPage(chainKey) {
   const byKey = new Map(d.stages.map((s) => [s.key, s]));
   const trends = (d.trends && d.trends.stages) || {};
   const card = (k) => (byKey.has(k) ? liStageCard(byKey.get(k), trends[k], chainKey) : "");
-  const arrow = `<span class="li-arrow" aria-hidden="true">→</span>`;
-  const layout = CHAIN_LAYOUTS[chainKey]
-    || { main: d.stages.map((s) => s.key), side: [] };
+
+  // 布局由数据驱动：mode=flow → 上/中/下游 + 配套四个层级带（带间 ↓ 流向箭头，
+  // 配套带弱化）；mode=category → 并列品类网格，不宣称上下游。stage 缺 tier 兜底进中游。
+  const tierKey = (tier) => "cboard.tier" + tier[0].toUpperCase() + tier.slice(1);
+  const flowHTML = d.mode === "category"
+    ? `<div class="li-cats">${d.stages.map((s) => card(s.key)).join("")}</div>`
+    : CHAIN_TIER_ORDER
+      .map((tier) => {
+        const list = d.stages.filter((s) => (s.tier || "mid") === tier);
+        if (!list.length) return "";
+        return `<div class="li-tier${tier === "support" ? " is-support" : ""}" data-tier="${tier}">
+          <div class="li-tier-lbl"><b>${esc(t(tierKey(tier), tier))}</b><small>${esc(t(tierKey(tier) + "Sub", tier))}</small></div>
+          <div class="li-tier-cards">${list.map((s) => card(s.key)).join("")}</div>
+        </div>`;
+      })
+      .filter(Boolean)
+      .join(`<div class="li-tier-arrow" aria-hidden="true">↓</div>`);
 
   // 传导视图只服务源头是期货价格的链（其余链 lag 全 0 没有信息量）；
   // 它顶部就是价格线，在场时替代独立价格图区块，避免重复
@@ -3688,17 +3549,7 @@ async function renderChainPage(chainKey) {
         <span class="sec-rule"></span>
       </div>
       <div class="li-flow">
-        <div class="li-flow-main">
-          ${layout.main.map((item) => Array.isArray(item)
-            ? `<div class="li-mats li-mats-${item.length}">${item.map(card).join("")}</div>`
-            : card(item)).join(arrow)}
-        </div>
-        ${layout.side.length ? `<div class="li-flow-side">
-          ${layout.side.map((g) => `<div class="li-support">
-            <p class="li-side-lbl">${esc(t(g.label[0], g.label[1]))}${g.suffix || ""}</p>
-            <div class="li-support-cards">${g.keys.map(card).join("")}</div>
-          </div>`).join("")}
-        </div>` : ""}
+        ${flowHTML}
       </div>
       ${purityData?.chains?.[chainKey] ? purityNoteHTML() : ""}
       ${chainValidateHTML(chainKey)}
