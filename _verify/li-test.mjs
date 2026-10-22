@@ -1,5 +1,6 @@
-// 产业链看板走查：锂 #/li、光伏 #/pv、半导体 #/semi
-// 每条链：结构断言（标题/卡数/迷你图数 == 有非空序列阶段数/来源注记）+ EN 翻译
+// 产业链看板走查：18 条链全量（老 8 条 #/li #/pv #/semi #/robot #/compute #/storage #/pharma #/auto
+// + 新 10 条 #/military #/food #/appliance #/chem #/metal #/grid #/celec #/agri #/cement #/steel）
+// 每条链：结构断言（标题/卡数/迷你图数 == 有非空序列阶段数/来源注记/纯度徽章）+ EN 翻译
 // + 移动端无溢出；价格图断言按 data/price/{key}.json 是否存在条件化。
 // 预期全部从数据文件推导（补抓期间个别阶段序列可能为空 → 降级占位；补齐后全出图）。
 import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
@@ -21,6 +22,16 @@ const CHAINS = [
   { hash: '#/storage', key: 'storage' },
   { hash: '#/pharma', key: 'pharma' },
   { hash: '#/auto', key: 'auto' },
+  { hash: '#/military', key: 'military' },
+  { hash: '#/food', key: 'food' },
+  { hash: '#/appliance', key: 'appliance' },
+  { hash: '#/chem', key: 'chem' },
+  { hash: '#/metal', key: 'metal' },
+  { hash: '#/grid', key: 'grid' },
+  { hash: '#/celec', key: 'celec' },
+  { hash: '#/agri', key: 'agri' },
+  { hash: '#/cement', key: 'cement' },
+  { hash: '#/steel', key: 'steel' },
 ];
 const chainData = {};
 const priceData = {};
@@ -30,6 +41,8 @@ for (const { key } of CHAINS) {
   const d = existsSync(p) ? JSON.parse(readFileSync(p, 'utf-8')) : null;
   priceData[key] = d && Array.isArray(d.points) && d.points.length >= 20 ? d : null;
 }
+// 概念纯度（照妖镜）：走查循环里每条链都要核对徽章，所以提前加载
+const purity = JSON.parse(readFileSync('data/purity.json', 'utf-8'));
 // 传导视图数据：source.type=="price" 的链应渲染传导视图并替代独立价格图
 const tmData = JSON.parse(readFileSync('data/transmission.json', 'utf-8'));
 const stageUsable = (d, s) => {
@@ -90,6 +103,8 @@ const STRUCT_EXPR = `JSON.stringify({
   pricePath: document.querySelectorAll('.hist svg path').length >= 2,
   src: document.querySelector('.li-src')?.textContent || null,
   coLinks: document.querySelectorAll('.li-co').length,
+  pctBadges: document.querySelectorAll('.li-co-pct').length,
+  purityNote: !!document.querySelector('.purity-note'),
   arrows: document.querySelectorAll('.li-arrow').length,
   moreBtns: document.querySelectorAll('[data-li-more]').length,
   transm: !!document.querySelector('.transm'),
@@ -146,6 +161,12 @@ for (const { hash, key } of CHAINS) {
   check(`[${key}] 公司链接 == 各阶段公司总数（${totalCos}），展开按钮 == 公司数>4 的卡数（${expectMore}）`,
     st.coLinks === totalCos && st.moreBtns === expectMore,
     `links=${st.coLinks} more=${st.moreBtns} 箭头 ${st.arrows}`);
+  // 纯度徽章：purity.json 覆盖的公司都应带三档标记之一（p% / 布局·未单列 / 未见披露）
+  const expectBadges = d.stages.reduce((n, s) => n + (s.companies || [])
+    .filter((c) => typeof purity.chains?.[key]?.[s.key]?.[c.code]?.p === 'number').length, 0);
+  check(`[${key}] 纯度徽章：有覆盖的公司全部带三档标记（${expectBadges}/${totalCos}）+ 口径说明在场`,
+    st.pctBadges === expectBadges && st.purityNote === !!purity.chains?.[key],
+    `badges=${st.pctBadges} note=${st.purityNote}`);
   check(`[${key}] 桌面无横向溢出`, st.noHScroll);
   await shot(`${key}-dark.png`);
 
@@ -215,7 +236,6 @@ for (const { hash, key } of CHAINS) {
 }
 
 // ---- 概念纯度（照妖镜）三档语义：数据驱动断言
-const purity = JSON.parse(readFileSync('data/purity.json', 'utf-8'));
 const purityRankOf = (v) => (v.p > 0 ? 2 + v.p : (v.m ? 1 : 0));
 const purityTierText = (v) => (v.p > 0 ? (v.p * 100).toFixed(1) + '%' : (v.m ? '布局·未单列' : '未见披露'));
 
@@ -471,7 +491,7 @@ const tmLagTxt = (st) => (st.lag > 0 ? `领先 ${st.lag} 日` : st.lag < 0 ? `�
     semi.val === false && semi.flow === true, JSON.stringify(semi));
 }
 
-// ---- 首页入口：三张卡，标题来自各链 JSON，指向 #/li、#/pv、#/semi
+// ---- 首页入口：18 张卡，标题来自各链 JSON meta，href 指向各链路由
 await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false });
 await send('Page.navigate', { url: BASE + '?fresh=' + Date.now() + '#/' });
 await sleep(2600);

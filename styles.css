@@ -1556,8 +1556,8 @@ html:not([data-boot="on"]) .boot-console { display: none; }
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 
-/* ---- 产业链看板（#/li、#/pv、#/semi） ---- */
-/* 首页入口：4 列紧凑网格（八卡正好 4×2；后续加链继续往下排），窄屏 2 列 → 1 列 */
+/* ---- 产业链看板（18 条链，路由见 app.js CHAIN_ROUTE） ---- */
+/* 首页入口：4 列紧凑网格（18 卡 = 4×4 + 末行 2），窄屏 2 列 → 1 列 */
 .li-entry-sec { padding: 0; }
 .li-entries {
   display: grid; grid-template-columns: repeat(4, 1fr);

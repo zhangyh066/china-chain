@@ -609,9 +609,14 @@ function loadIndustryTrends(ind) {
    顶层自带双语 meta：title/titleEn、sub/subEn，阶段自带 name/nameEn/desc/descEn），
    data/price/{key}.json（期货主力日线，有的链没有 → 价格区块自动不出现）。
    后台补抓期间个别环节序列可能还是 []——渲染层按"数据补齐中"降级，不算错。
-   缺失/断网静默降级。 */
-const CHAIN_KEYS = ["lithium", "pv", "semi", "robot", "compute", "storage", "pharma", "auto"];
-const CHAIN_ROUTE = { li: "lithium", pv: "pv", semi: "semi", robot: "robot", compute: "compute", storage: "storage", pharma: "pharma", auto: "auto" };
+   缺失/断网静默降级。18 条链：老 8 条路由别名历史沿用（li=lithium），新 10 条 hash 与 key 同名。 */
+const CHAIN_KEYS = ["lithium", "pv", "semi", "robot", "compute", "storage", "pharma", "auto",
+  "military", "food", "appliance", "chem", "metal", "grid", "celec", "agri", "cement", "steel"];
+const CHAIN_ROUTE = {
+  li: "lithium", pv: "pv", semi: "semi", robot: "robot", compute: "compute", storage: "storage", pharma: "pharma", auto: "auto",
+  military: "military", food: "food", appliance: "appliance", chem: "chem", metal: "metal",
+  grid: "grid", celec: "celec", agri: "agri", cement: "cement", steel: "steel",
+};
 const chainBoardCache = new Map(); // key → Promise<data|null>
 const chainBoardData = new Map();  // key → 已落地的数据（首页入口卡同步读取用）
 function loadChainBoard(key) {
@@ -783,7 +788,7 @@ function parseRoute() {
     };
   }
   if (h === "vision") return { name: "vision" };
-  // 产业链看板：#/li（锂，旧链接保留）、#/pv、#/semi、#/robot、#/compute、#/storage
+  // 产业链看板：18 条链，路由表见 CHAIN_ROUTE（#/li 是锂的旧链接，保留）
   if (CHAIN_ROUTE[h]) return { name: "chain", chainKey: CHAIN_ROUTE[h] };
   // "atlas" 是"全景图谱"的旧名字，留着旧链接不失效
   if (h === "worldmap" || h === "atlas") return { name: "worldmap" };
@@ -1571,10 +1576,12 @@ function boardTempHTML() {
   </div>`;
 }
 
-/* 首页的产业链看板入口：一个区块三张卡（锂/光伏/半导体），标题/sub 读各链
+/* 首页的产业链看板入口：一个区块 18 张卡，标题/sub 读各链
    JSON 自带的双语 meta；某条链 404 就跳过那张卡。数据是异步的，正文先放
    占位槽，渲染完后由 renderChainEntries 填进来（已缓存时同步填充无闪烁）。 */
-const CHAIN_HASH = { lithium: "#/li", pv: "#/pv", semi: "#/semi", robot: "#/robot", compute: "#/compute", storage: "#/storage", pharma: "#/pharma", auto: "#/auto" };
+const CHAIN_HASH = { lithium: "#/li", pv: "#/pv", semi: "#/semi", robot: "#/robot", compute: "#/compute", storage: "#/storage", pharma: "#/pharma", auto: "#/auto",
+  military: "#/military", food: "#/food", appliance: "#/appliance", chem: "#/chem", metal: "#/metal",
+  grid: "#/grid", celec: "#/celec", agri: "#/agri", cement: "#/cement", steel: "#/steel" };
 function chainEntriesHTML() {
   const cards = CHAIN_KEYS.map((k) => {
     const d = chainBoardData.get(k);
@@ -3241,7 +3248,7 @@ function rerenderCompanyTrend() {
   if (slot && histCtx) slot.innerHTML = companyTrendInnerHTML();
 }
 
-/* ---- 产业链看板（#/li、#/pv、#/semi） ---------------------------------------
+/* ---- 产业链看板（18 条链，路由见 CHAIN_ROUTE） ---------------------------------
    页面结构由数据驱动：标题/sub/阶段名/简介全部读 chain JSON 的双语 meta；
    只有布局（哪些阶段进主流线、哪些是配套排）按链配置——
    主流线里的子数组表示 2×2 子格（锂电的四大主材）。未配置的链回退为全部阶段一字排开。
@@ -3300,6 +3307,60 @@ const CHAIN_LAYOUTS = {
   // 汽车：上游三个并列（轻量化/热管理/内外饰，1×3 子格）→ 汽车电子与智驾 → 整车
   auto: {
     main: [["lightweight", "thermal", "trim"], "electronics", "oem"],
+    side: [],
+  },
+  // 军工：上游材料 → 中游发动机/电子并列 → 下游四大装备平台 2×2
+  military: {
+    main: ["material", ["engine", "electronics"], ["aviation", "space", "ship", "ground"]],
+    side: [],
+  },
+  // 食品饮料：酒类三席并列 → 餐桌食品四席 2×2（呼应 sub 的「从酿造到餐桌」）
+  food: {
+    main: [["liquor", "beer", "wine"], ["dairy", "condiment", "snack", "meat"]],
+    side: [],
+  },
+  // 家电：上游核心零部件 → 中游白/黑/厨电并列 → 下游小家电/照明电工并列
+  appliance: {
+    main: ["parts", ["white", "black", "kitchen"], ["small", "lighting"]],
+    side: [],
+  },
+  // 化工：上游资源原料 → 中游五大子行业并列（2 列子格）→ 下游新材料/轮胎
+  chem: {
+    main: ["resource", ["phosphate", "fluorine", "pesticide", "fertilizer", "chlor_alkali"], ["new_material", "tire"]],
+    side: [],
+  },
+  // 有色：基本金属三席 / 贵金属与稀有金属三席并列；再生金属循环回上游
+  metal: {
+    main: [["copper", "aluminum", "lead_zinc"], ["gold", "rare_earth", "minor"]],
+    side: [
+      { label: ["cboard.loopBack", "循环回上游"], suffix: " ↩", keys: ["recycle"] },
+    ],
+  },
+  // 电网：一次设备 → 线缆/二次设备并列 → 计量/电网数字化并列
+  grid: {
+    main: ["transmission", ["cable", "secondary"], ["meter", "grid_it"]],
+    side: [],
+  },
+  // 消费电子：上中游六类零部件/模组并列（2 列子格）→ 组装代工 → 品牌终端
+  celec: {
+    main: [["parts", "acoustic", "optical", "display", "pcb", "passive"], "assembly", "brand"],
+    side: [],
+  },
+  // 农业：上游种苗/种植/饲料/动保 2×2 → 中游养殖 + 下游加工 2×2
+  agri: {
+    main: [["seed", "planting", "feed", "animal_health"], ["pig", "poultry", "fishery", "processing"]],
+    side: [],
+  },
+  // 建材：水泥/玻璃/骨料三大品类并列 → 消费建材；耐火材料是配套
+  cement: {
+    main: [["cement", "glass", "aggregate"], "consumer"],
+    side: [
+      { label: ["cboard.support", "配套"], keys: ["refractory"] },
+    ],
+  },
+  // 钢铁：上游铁矿石 → 中游长材/板材/特钢并列 → 下游钢管
+  steel: {
+    main: ["ore", ["long", "flat", "special"], "pipe"],
     side: [],
   },
 };
