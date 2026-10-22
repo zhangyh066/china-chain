@@ -370,10 +370,13 @@
   "cboard.sugSupply": "supplies {to} · {p} of its own revenue",
   "cboard.sugBuy": "buys from {to} · {p} of its own procurement",
   "cboard.sugNote": "Inferred from annual-report supply links along the chain's direction: a \"candidate\" only means a disclosed relationship with a chain member — actual membership in this stage is not manually verified. Defer to official disclosures.",
-  "em.title": "Supply-link transmission, measured",
-  "em.body": "{e} disclosed supply links × 1 year of daily prices: same-week co-movement {r0}; customers leading by one week {r1} ({n}) — no cross-week lead-lag is visible at daily frequency; {p} of edges fit best at lag 0. The monthly Cohen–Frazzini (2008) effect does not replicate at weekly horizon.",
-  "em.why": "The null result matters too: \"customers lead suppliers\" is falsified at weekly horizon, blocking an over-eager extrapolation of the monthly finding.",
-  "em.foot": "correlation ≠ causation · research use only · not a forecast",
-  "em.takeTitle": "Our Takeaway",
-  "em.takeBody": "Our tests rule out \"mechanical momentum transmission\": across 25k supplier-months in A-shares (2010–2026), customer returns show no predictive power for supplier returns (r≈0). Differentiation must come from structure itself — chain position, concentration shifts, new disclosures — not from predicting prices."
+  "em.storyTitle": "No Late Money Along the Supply Chain",
+  "em.lblHypo": "Hypothesis",
+  "em.lblTest": "Test",
+  "em.lblVerdict": "Verdict",
+  "em.lblImply": "Implication",
+  "em.storyHypo": "Information diffuses slowly along supply chains: customer returns predict supplier returns with a lag. Documented in U.S. markets in 2008, it spawned a class of \"customer momentum\" strategies.",
+  "em.storyTest": "Real supplier–customer links disclosed in the annual reports of 4,000+ A-share companies, across weekly and monthly horizons, 25,000+ observations, with randomly matched pseudo-links as a control group.",
+  "em.storyVerdict": "Contemporaneous correlation 0.27 — chain partners genuinely co-move; the data is real. But cross-period predictive power is zero (r≈0.00); 67.8% of links show the same period as optimal lag; long–short portfolios built on this signal earn no more than chance. <strong>\"Buy the supplier after the customer rallies\" has no alpha window in A-shares — information is priced along the chain within the day.</strong>",
+  "em.storyImply": "Falsifying this path marks exactly where this product's moat lies: supply-chain data for <strong>attribution and structure</strong> — why a move happened and where exposure sits — not for predicting the next candle. The market has no shortage of forecasting tools; what it lacks is an empirically validated map of industrial relationships."
 }

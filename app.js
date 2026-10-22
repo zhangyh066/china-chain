@@ -725,17 +725,6 @@ function loadChainInfer() {
     .catch(() => (chainInferData = null));
 }
 
-/* 披露边传导实测：data/edge_momentum.json，离线生成。
-   pooled.{lag0,lag1,lag2}={r,n}（全部边周观测池化）；bestLagHist={lag:边数}。
-   首页研究卡的唯一数据源——一个诚实的阴性结果；404/断网静默 null。 */
-let edgeMomPromise = null;
-let edgeMomData = null;
-function loadEdgeMomentum() {
-  return edgeMomPromise ||= getJSON("./data/edge_momentum.json")
-    .then((d) => (edgeMomData = (d && d.pooled ? d : null)))
-    .catch(() => (edgeMomData = null));
-}
-
 /* 客户与供应商（年报披露）：data/supply.json，离线生成。
    companies[code] = { conc:{year, top5C, top5S, concHist:[[year, top5C], ...近4年]},
                        customers:[{name, code|null, ratio, amount(万元)}], suppliers:[同构] }。
@@ -1468,38 +1457,26 @@ function marketRankHTML() {
     </div>`;
 }
 
-/* 首页研究卡：披露边传导实测——一个诚实的阴性结果。
-   检验「客户领先供应商」的假说：同周共动显著、跨周领先不可见；
-   写法遵守「检验了什么、没发现什么、为什么这也重要」，不写成「发现了什么」。 */
+/* 首页研究故事卡：「沿供应链，没有晚到的钱」——假设 / 验证 / 判决 / 意义 四段判决书结构。
+   静态文案（locales 里的最终稿），不读 data/*.json；正文段含 <strong> 嵌套加粗，
+   是可信静态字符串，所以标签 esc、正文不 esc。 */
 function edgeMomentumHTML() {
-  const d = edgeMomData;
-  if (!d?.pooled?.lag0 || !d?.pooled?.lag1) return "";
-  const { lag0, lag1 } = d.pooled;
-  const hist = d.bestLagHist || {};
-  const histTotal = Object.values(hist).reduce((s, v) => s + (Number(v) || 0), 0);
-  const sameWeek = histTotal ? (hist["0"] || 0) / histTotal : null;
-  const rSeg = (v) => (v != null && Math.abs(v) < 0.005 ? "r≈0.00" : `r=${fmtNum(v, 2)}`);
-  const nTxt = (v) => (getLocale() === "en"
-    ? `n=${fmtInt(Math.round(v / 1000))}K`
-    : `n=${(v / 10000).toFixed(1).replace(/\.0$/, "")} 万`);
+  const sec = (lblKey, lblZh, bodyKey, bodyZh, verdict = false) => `
+      <div class="em-sec">
+        <span class="em-lbl${verdict ? " em-lbl-verdict" : ""}">${esc(t(lblKey, lblZh))}</span>
+        <p class="em-sec-body">${t(bodyKey, bodyZh)}</p>
+      </div>`;
   return `
-    <div class="em-card">
-      <p class="em-title">${esc(t("em.title", "披露边传导实测"))}</p>
-      <p class="em-body">${esc(t("em.body",
-        "{e} 条真实供应关系 × 1 年日线：同周共动 {r0}，客户领先一周 {r1}（{n}）——信息沿供应链的跨周滞后在日频样本上不可见；{p} 的边最佳 lag 为同周。Cohen-Frazzini(2008) 的月度效应未在周度复现。")
-        .replace("{e}", fmtInt(d.edgesUsed || 0))
-        .replace("{r0}", rSeg(lag0.r))
-        .replace("{r1}", rSeg(lag1.r))
-        .replace("{n}", nTxt(lag1.n))
-        .replace("{p}", sameWeek != null ? fmtPct(sameWeek * 100, false) : "—"))}</p>
-      <p class="em-why">${esc(t("em.why",
-        "阴性结果同样重要：「客户领先供应商」在周度上被证伪，阻止了把月度结论外推到更短周期。"))}</p>
-      <p class="em-foot">${esc(t("em.foot", "相关≠因果 · 研究用途 · 非预测"))}</p>
-    </div>
-    <div class="em-take">
-      <p class="em-take-title">${esc(t("em.takeTitle", "我们的判断"))}</p>
-      <p class="em-take-body">${esc(t("em.takeBody",
-        "实测排除了「机械动量传导」这条路——A 股 2010–2026、2.5 万个供应商-月观测中，客户涨跌对供应商未来收益没有预测力（r≈0）。差异化要赢，得靠结构本身——链条位置、集中度变化、新披露事件，而不是预测涨跌。"))}</p>
+    <div class="em-card em-story">
+      <p class="em-title">${esc(t("em.storyTitle", "沿供应链，没有晚到的钱"))}</p>
+      ${sec("em.lblHypo", "假设", "em.storyHypo",
+        "信息沿供应链扩散需要时间，客户的涨跌会滞后传导至供应商——2008 年美股实证成立，并由此诞生了一类「客户动量」策略。")}
+      ${sec("em.lblTest", "验证", "em.storyTest",
+        "基于 4,000 余家 A 股公司年报披露的真实供应关系，横跨周度与月度两个周期，累计 2.5 万+ 观测，并以随机配对的伪关系作为对照组。")}
+      ${sec("em.lblVerdict", "判决", "em.storyVerdict",
+        "同期相关系数 0.27——链条两端真实联动，数据有效性成立。但跨期预测力为零（r≈0.00），67.8% 的关系最优领先阶为同期；据此构建的多空组合，收益与随机无异。<strong>「客户上涨后买入供应商」在 A 股不存在超额收益窗口——信息于当日沿链条定价完毕。</strong>", true)}
+      ${sec("em.lblImply", "意义", "em.storyImply",
+        "这条路的证伪，恰恰标定了本产品数据的价值边界与护城河所在——供应链数据用于<strong>归因与结构</strong>：解释异动因何而起、敞口分布在何处，而非预测下一根 K 线。市场上从不缺预测工具，缺的是一张被实证检验过的产业关系底图。")}
     </div>`;
 }
 
@@ -5434,7 +5411,7 @@ async function boot() {
 
   // graph 给首页的行业概览卡提供环节分布（行情的三个数已随 index.json 下来）。
   // 全市场走势指数与 graph 并行拉，首页首帧就能把走势图一起画出来。
-  await Promise.all([loadGraph(), loadTrendsIndex(), loadEdgeMomentum()]);
+  await Promise.all([loadGraph(), loadTrendsIndex()]);
   bootUI?.graphDone();
   // 把 index.json 里的轻量行情字段展开成 quotes 映射，下游渲染代码不用改。
   // 三个数全缺的公司不建条目——卡片本来就会按"没有数字"渲染。

@@ -1681,34 +1681,26 @@ html:not([data-boot="on"]) .boot-console { display: none; }
 .cand-tag { flex: none; }
 .cand-note { margin: 10px 0 0; max-width: 72em; }
 
-/* 首页研究卡：克制的阴性结果，衬底比正文区块再淡半档 */
+/* 首页研究故事卡：判决书四段（假设/验证/判决/意义）。吸收原结论专框的强调外观
+   （主色衬底 + 实色左条），每段一个小徽章标签；判决段徽章用琥珀描边高亮 */
 .em-card {
-  margin-top: 16px; padding: 14px 16px;
-  border: 1px dashed var(--border-strong); border-radius: var(--radius);
-  background: var(--surface-soft); max-width: 72em;
-}
-.em-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: .03em; }
-.em-body { margin: 8px 0 0; font-size: 12.5px; line-height: 1.8; color: var(--text-soft); }
-.em-why { margin: 6px 0 0; font-size: 12.5px; line-height: 1.8; color: var(--text-soft); }
-.em-foot {
-  margin: 10px 0 0; font-family: var(--mono); font-size: 11px;
-  letter-spacing: .05em; color: var(--text-faint);
-}
-
-/* 研究结论专框：与上面的数据卡（虚线淡底）区分开——实色左条 + 主色衬底强调，
-   仍是同一套暗色语言；静态文案，中英长度差异由 max-width + 行高吸收 */
-.em-take {
-  margin-top: 10px; padding: 14px 16px; max-width: 72em;
+  margin-top: 16px; padding: 16px 18px; max-width: 72em;
   background: var(--primary-soft);
   border: 1px solid color-mix(in srgb, var(--primary) 45%, var(--border));
   border-left: 3px solid var(--primary);
   border-radius: var(--radius);
 }
-.em-take-title {
-  margin: 0; font-size: 13px; font-weight: 600;
-  color: var(--primary-dark); letter-spacing: .03em;
+.em-title { margin: 0; font-size: 15px; font-weight: 700; color: var(--text); }
+.em-sec { display: flex; gap: 10px; align-items: flex-start; margin-top: 12px; }
+.em-lbl {
+  flex: none; margin-top: 2px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .08em;
+  padding: 1px 8px; border-radius: 999px;
+  color: var(--text-faint); border: 1px solid var(--border-strong);
 }
-.em-take-body { margin: 8px 0 0; font-size: 13px; line-height: 1.8; color: var(--text); }
+.em-lbl-verdict { color: var(--primary); border-color: var(--primary); }
+.em-sec-body { margin: 0; font-size: 13px; line-height: 1.8; color: var(--text-soft); }
+.em-sec-body strong { color: var(--text); font-weight: 600; }
 
 @media (max-width: 1100px) {
   .li-flow-main { flex-wrap: wrap; }

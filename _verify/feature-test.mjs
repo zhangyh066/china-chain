@@ -578,43 +578,28 @@ check('位置图披露层：披露卡实线加粗连锚点 vs 行业卡虚线 + 
     && pos.legend.includes('年报披露') && pos.legend.includes('行业推断'),
   JSON.stringify({ solid: pos.solid, dashed: pos.dashed, legend: pos.legend }));
 
-console.log('— 首页研究卡（披露边传导实测 · 阴性结果）—');
-const emom = JSON.parse(fs.readFileSync('data/edge_momentum.json', 'utf-8'));
-const emHistTotal = Object.values(emom.bestLagHist).reduce((s, v) => s + v, 0);
-const emSameWeek = (emom.bestLagHist['0'] / emHistTotal * 100).toFixed(2).replace(/\.?0+$/, '') + '%';
+console.log('— 首页研究故事卡（判决书四段）—');
 await evaluate(`location.href = ${JSON.stringify(BASE)} + '#/'`);
 await waitFor(`!!document.querySelector('.em-card')`);
-const em = JSON.parse(await evaluate(`JSON.stringify({
-  title: document.querySelector('.em-title')?.textContent || null,
-  body: document.querySelector('.em-body')?.textContent || null,
-  why: document.querySelector('.em-why')?.textContent || null,
-  foot: document.querySelector('.em-foot')?.textContent || null,
-})`));
-check('研究卡：标题 + 数字从 JSON 读（r0=0.27 / r1≈0.00 / n=43.8万 / 67.75% 同周）',
-  !!em && !!em.title && em.title.includes('传导实测')
-    && !!em.body && em.body.includes(`r=${emom.pooled.lag0.r.toFixed(2)}`)
-    && em.body.includes('r≈0.00')
-    && em.body.includes(`${(emom.pooled.lag1.n / 10000).toFixed(1)} 万`)
-    && em.body.includes(emSameWeek)
-    && em.body.includes('1,842'),
-  JSON.stringify(em));
-check('研究卡：阴性结果措辞（不可见/未复现/证伪）+「非预测」声明',
-  !!em && em.body.includes('不可见') && em.body.includes('未在周度复现')
-    && !!em.why && em.why.includes('证伪')
-    && !!em.foot && em.foot.includes('非预测'),
-  JSON.stringify({ why: em?.why, foot: em?.foot }));
-
-// 独立「研究结论」专框：静态文案，紧跟研究卡之后、视觉独立成框
-const emTake = JSON.parse(await evaluate(`JSON.stringify({
-  title: document.querySelector('.em-take .em-take-title')?.textContent || null,
-  body: document.querySelector('.em-take .em-take-body')?.textContent || null,
-  adjacent: !!document.querySelector('.em-card + .em-take'),
-})`));
-check('研究结论专框：「我们的判断」独立成框、紧接研究卡之后（静态文案不读 JSON）',
-  !!emTake && emTake.adjacent && emTake.title === '我们的判断'
-    && !!emTake.body && emTake.body.includes('机械动量传导') && emTake.body.includes('r≈0')
-    && emTake.body.includes('而不是预测涨跌'),
-  JSON.stringify(emTake));
+const story = JSON.parse(await evaluate(`JSON.stringify((() => {
+  const card = document.querySelector('.em-card');
+  return {
+    title: card?.querySelector('.em-title')?.textContent || null,
+    labels: [...(card?.querySelectorAll('.em-lbl') || [])].map((e) => e.textContent),
+    text: card?.textContent || '',
+    strongs: [...(card?.querySelectorAll('.em-sec-body strong') || [])].map((e) => e.textContent),
+    takeGone: !document.querySelector('.em-take'),
+    oldGone: !card?.querySelector('.em-body, .em-why, .em-foot'),
+  };
+})())`));
+check('研究故事卡：标题逐字「沿供应链，没有晚到的钱」+ 四段标签（假设/验证/判决/意义）',
+  story.title === '沿供应链，没有晚到的钱' && story.labels.join('|') === '假设|验证|判决|意义',
+  JSON.stringify({ title: story.title, labels: story.labels }));
+check('研究故事卡：判决段含 0.27 与 r≈0.00、嵌套 <strong> 正常渲染（未转义）',
+  story.text.includes('0.27') && story.text.includes('r≈0.00')
+    && story.strongs.length >= 2 && story.strongs.some((s) => s.includes('信息于当日沿链条定价完毕')),
+  JSON.stringify({ strongs: story.strongs }));
+check('研究故事卡：旧学术口径元素与 .em-take 专框已移除', story.takeGone && story.oldGone, '');
 
 console.log('— 价值链地图导出 PNG（002594 手工档案）—');
 await evaluate(`location.href = ${JSON.stringify(BASE + '#/c/002594')}`);
