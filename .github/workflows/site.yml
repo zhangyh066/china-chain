@@ -26,21 +26,31 @@ jobs:
       - name: 数据一致性自检（不联网不重建）
         run: python pipeline/ci_check.py
 
-      - name: 启动站点
+      - name: 构建发布目录（验证部署产物本身，而不是源码目录）
+        run: SITE_BASE="https://zhangyh066.github.io/china-chain" python build_dist.py
+
+      - name: 启动站点（serve dist/）
         run: |
-          python serve.py 8123 &
+          python serve.py 8123 dist &
           echo "SERVER_PID=$!" >> "$GITHUB_ENV"
+          # 等服务就绪；起不来就立刻红，别让失败推迟到端到端那步才爆
+          for i in $(seq 1 20); do
+            curl -sf -o /dev/null http://127.0.0.1:8123/ && break
+            sleep 1
+          done
+          curl -sf -o /dev/null http://127.0.0.1:8123/ || { echo "serve.py 未就绪"; exit 1; }
 
       - name: 启动 Chromium（无头 + CDP）
         run: |
           google-chrome --headless=new --remote-debugging-port=9223 \
             --user-data-dir=/tmp/chrome-verify --no-sandbox \
             --window-size=1440,1100 about:blank &
-          # 等调试端口起来
+          # 等调试端口起来；30 秒还没起来就是 Chrome 自己没启动，直接红
           for i in $(seq 1 30); do
             curl -s http://127.0.0.1:9223/json/list >/dev/null && break
             sleep 1
           done
+          curl -sf http://127.0.0.1:9223/json/list >/dev/null || { echo "Chromium CDP 未就绪"; exit 1; }
 
       - uses: actions/setup-node@v4
         with:

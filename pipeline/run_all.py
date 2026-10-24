@@ -22,6 +22,9 @@
 仅当 data/chain/ 存在时跑）、build_purity.py（概念纯度，离线，仅当
 data/p/ 存在时跑，读当轮 chain 产物）。
 
+最后固定跑 prerender.py 重生成 pages/ 与 sitemap/robots（公司名单变了
+静态页必须跟着变，否则 ci_check 的页数断言会把 CI 锁死）。
+
 purity 之后还有本地专属一步 build_supply.py（披露级供应链：前五大客户/
 供应商实名明细与集中度）：原始数据是 新建文件夹/ 下的 CNRDS 表，许可
 红线——仅限本机使用，绝不入库、绝不外传（新建文件夹/ 已加 .gitignore）。
@@ -53,6 +56,7 @@ TRENDS_STEP = ("build_trends.py", False)
 CHAINS_STEP = ("build_chains.py", False)
 TRANSMISSION_STEP = ("build_transmission.py", False)
 SUPPLY_STEP = ("build_supply.py", False)
+PRERENDER_STEP = ("prerender.py", False)
 
 
 def run(script, args):
@@ -143,6 +147,14 @@ def main():
     else:
         print("\n-- 跳过 build_supply.py：新建文件夹/ 无 CNRDS 原始表"
               "（本地专属数据，CI 上属预期）", flush=True)
+
+    # 静态页/sitemap 必须与 data/ 同步再生成：ci_check 断言"页数 = 公司数"，
+    # 公司名单一变（IPO/退市/概念漂移），pages/ 不重跑整个 CI 就被页数断言锁死
+    rc = run(PRERENDER_STEP[0], [])
+    n_steps += 1
+    if rc:
+        print(f"\n[FAIL] prerender.py 中断，总耗时 {(time.time()-t0)/60:.1f} 分钟")
+        return rc
 
     print(f"\n[ok] {n_steps} 步全部完成，总耗时 {(time.time()-t0)/60:.1f} 分钟")
     return 0

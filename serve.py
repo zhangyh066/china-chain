@@ -9,7 +9,8 @@
 表现就是"改了代码、刷新、还是旧页面"，而且控制台一句报错都没有。
 
 用法：
-    python serve.py [端口]        # 默认 8123
+    python serve.py [端口] [目录]  # 端口默认 8123；目录默认为脚本所在处，
+                                   # 传 dist/ 可直接预览/验证构建产物
 
 只监听 127.0.0.1（本机），不对外暴露。
 """
@@ -20,7 +21,10 @@ import socketserver
 import sys
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8123
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.abspath(sys.argv[2]) if len(sys.argv) > 2 \
+    else os.path.dirname(os.path.abspath(__file__))
+if not os.path.isdir(ROOT):
+    sys.exit(f"目录不存在：{ROOT}")
 
 
 class NoCacheHandler(http.server.SimpleHTTPRequestHandler):

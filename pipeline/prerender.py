@@ -27,10 +27,10 @@ DATA = os.path.join(ROOT, "data")
 PAGES = os.path.join(ROOT, "pages")
 SITE_BASE = os.environ.get("SITE_BASE", "").rstrip("/")
 
-# 托管地址未给定时，sitemap/og:url 用相对站点的绝对路径占位——
-# 真正部署后应该用真实域名重新生成一遍（GitHub Actions 里已带这步）
+# 托管地址未给定时用生产地址兜底——产出（sitemap/canonical）是要提交入库的，
+# 默认值绝不能是本机预览域名；换正式域名时用 SITE_BASE 环境变量覆盖
 if not SITE_BASE:
-    SITE_BASE = "https://0ebad93a143e456cbd2e30cb01966249.app.workbuddy.host"
+    SITE_BASE = "https://zhangyh066.github.io/china-chain"
 
 TOP_BOARDS = 15        # 行业页环节分布最多列几个
 TOP_COMPANIES = 12     # 行业页龙头最多列几家
@@ -428,6 +428,21 @@ def write_page(rel, html):
         f.write(html)
 
 
+def sweep_stale(expected_c, expected_i):
+    """删掉已不在当前名单里的旧页面：公司退出入选名单后旧 .html 留在 pages/ 里，
+    ci_check 的"页数 = 公司数"断言会永远红（而且只有本地能解锁）。"""
+    removed = 0
+    for sub, expected in (("c", expected_c), ("i", expected_i)):
+        d = os.path.join(PAGES, sub)
+        if not os.path.isdir(d):
+            continue
+        for fn in os.listdir(d):
+            if fn.endswith(".html") and fn not in expected:
+                os.remove(os.path.join(d, fn))
+                removed += 1
+    return removed
+
+
 def main():
     # 样式单独立一份（4,095 个页面共用，别每个文件内联一遍）
     os.makedirs(PAGES, exist_ok=True)
@@ -442,6 +457,11 @@ def main():
     print(f"② 公司页 × {len(companies)}")
     for c in companies:
         write_page(company_url(c["ticker"]), company_page(c))
+
+    stale = sweep_stale({f"{c['ticker']}.html" for c in companies},
+                        {f"{ind}.html" for ind in industries})
+    if stale:
+        print(f"   清掉 {stale} 个已退出名单的旧页面")
 
     print("③ sitemap.xml / robots.txt")
     urls = [("/pages/" + industry_url(i), "0.8") for i in industries]

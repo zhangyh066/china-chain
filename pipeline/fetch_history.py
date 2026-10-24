@@ -18,7 +18,9 @@
   requests.get，不走 request_with_retry，patch 里的三个入口都盖不住它。
 
 断点续抓：原始返回（400 天全量）存 real/hist/{code}.json，存在即跳过；
-接口真异常（重试 3 次仍败）记入 real/hist_failed.json，原命令重跑续抓。
+已入库的 data/h/{code}.json 也算抓过（CI runner 上没有 real/hist 缓存，
+只认它会退化成每次全量重抓）。接口真异常（重试 3 次仍败）记入
+real/hist_failed.json，原命令重跑续抓。
 停牌/退市/新上市导致 points 少甚至为空不算失败——正常落盘，前端自己处理。
 
 用法：
@@ -67,10 +69,14 @@ def load_json(path, default=None):
 
 
 def save_json(path, obj):
+    # 先写临时文件再原子改名：配合 `timeout 600 --batch 300` 使用时进程可能被
+    # 外层超时强杀，直写目标文件会留下半个 JSON，被断点逻辑当作"已抓完"永不重试
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=None, separators=(",", ":"))
         f.write("\n")
+    os.replace(tmp, path)
 
 
 def fetch_with_retry(label, fn):
@@ -187,7 +193,12 @@ def main():
     failed = set(load_json(FAILED, []))
     todo, skipped = [], 0
     for code in codes:
-        if not refresh and os.path.exists(os.path.join(CACHE, f"{code}.json")):
+        if not refresh and (
+                os.path.exists(os.path.join(CACHE, f"{code}.json"))
+                or os.path.exists(os.path.join(OUT, f"{code}.json"))):
+            # CACHE 是本机断点缓存（gitignore），OUT 是已入库的发布文件——
+            # 两者任一存在都算"抓过"。只认 CACHE 的话，CI runner 上 CACHE
+            # 永远为空，每次都退化成 4000+ 家全量重抓（几个小时，必超时）
             skipped += 1
             continue
         todo.append(code)
