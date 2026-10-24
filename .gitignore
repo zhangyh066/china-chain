@@ -33,3 +33,6 @@ pipeline/real/hist_full_failed.json
 # 系统/编辑器杂项
 .DS_Store
 Thumbs.db
+
+# 周报产物（weekly_report.py 生成，CI 直接发 Issue，不入库）
+weekly_report.md
