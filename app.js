@@ -834,8 +834,14 @@ async function route() {
   } else if (r.name === "company") {
     app.innerHTML = "";
     startLoading();
+    const ticker = r.ticker.toUpperCase();
+    // 竞态守卫：加载途中用户可能已跳去别的公司或别的页（#/c/A → #/c/B 是同名
+    // 路由，只比名字拦不住），慢响应回来时参数也一致才允许动 DOM
+    const stillOn = () => {
+      const now = parseRoute();
+      return now.name === "company" && now.ticker.toUpperCase() === ticker;
+    };
     try {
-      const ticker = r.ticker.toUpperCase();
       // 只加载这三个：4,071 家里只有 151 家有独立的价值链卡片，
       // 其余公司的信息全部从 index.json（身份/行业）+ graph.json（所属环节/同行）推导
       const info = (indexData?.companies || []).find((c) => c.ticker === ticker);
@@ -872,9 +878,10 @@ async function route() {
       data.profile = profile;   // 公司介绍（可能为 null，渲染层兜底）
       data.history = history;   // 近一年收盘价（可能为 null，渲染层跳过整块）
       data.indTrends = indTrends;   // 行业/环节指数（可能为 null，走势图降级为公司单线）
-      if (parseRoute().name !== "company") return;  // 加载途中用户跳走了，别再渲染
+      if (!stillOn()) return;  // 加载途中用户跳走了，别再渲染
       renderCompany(data);
     } catch {
+      if (!stillOn()) return;  // 跳走了连错误页都别写，免得盖掉新页面
       app.innerHTML = `<p class="empty">${esc(t("err.company", "这家公司没加载出来。"))}`
         + ` <a href="#/">${esc(t("crumb.home", "全部公司"))}</a></p>`;
     } finally {
@@ -1920,8 +1927,9 @@ async function renderIndustryPage(ind) {
     loadIndustryTrends(ind).then((d) => { indTrends = d; }),
     loadPurity(),
   ]);
-  if (parseRoute().name !== "industry") return;
-  stopLoading();
+  stopLoading();   // 先还加载计数再判断跳走：早退漏了它，加载线会永久卡死
+  const rNow = parseRoute();
+  if (rNow.name !== "industry" || rNow.industry !== ind) return;
   if (!g || !g.industries[ind]) {
     app.innerHTML = `<p class="empty">${esc(t("ind.unknown", "没有这个行业。"))}`
       + ` <a href="#/">${esc(t("crumb.home", "全部行业"))}</a></p>`;
@@ -3485,8 +3493,8 @@ async function renderChainPage(chainKey) {
   startLoading();
   const [d, price] = await Promise.all([loadChainBoard(chainKey), loadChainPrice(chainKey), loadPurity(), loadTransmission(), loadChainInfer()]);
   const r = parseRoute();
+  stopLoading();   // 先还加载计数再判断跳走：早退漏了它，加载线会永久卡死
   if (r.name !== "chain" || r.chainKey !== chainKey) return;
-  stopLoading();
   if (!d || !d.stages.length) {
     app.innerHTML = `<p class="empty">${esc(t("cboard.error", "看板数据没加载出来。"))}`
       + ` <a href="#/">${esc(t("crumb.home", "全部行业"))}</a></p>`;
@@ -3781,8 +3789,9 @@ async function renderEquipmentPage(id) {
   app.innerHTML = "";
   startLoading();
   const chain = await loadChainData();
-  if (parseRoute().name !== "equipment") return;
-  stopLoading();
+  stopLoading();   // 先还加载计数再判断跳走：早退漏了它，加载线会永久卡死
+  const rNow = parseRoute();
+  if (rNow.name !== "equipment" || rNow.id !== id) return;
   const d = chain && chain.devices ? chain.devices[id] : null;
   if (!d) {
     app.innerHTML = `<p class="empty">${esc(t("chain.errEquipment", "没有这个设备档案。"))}`
@@ -3835,7 +3844,8 @@ async function renderCompare(tickers) {
   const codes = [...new Set(tickers)].slice(0, COMPARE_MAX);
   const [, ...quotes] = await Promise.all([loadGraph(), ...codes.map(loadQuote)]);
   stopLoading();
-  if (parseRoute().name !== "compare") return;
+  const rNow = parseRoute();
+  if (rNow.name !== "compare" || rNow.tickers.join(",") !== tickers.join(",")) return;
 
   const byTicker = new Map((indexData?.companies || []).map((c) => [c.ticker, c]));
   const cols = [];
@@ -4222,12 +4232,15 @@ async function renderIndustryRingPage(ind) {
   startLoading();
   const [g] = await Promise.all([loadGraph()]);
   stopLoading();
+  // 先判断跳走再看数据：守卫放在错误分支后面的话，慢响应会在用户已离开时
+  // 把"没有这个行业"盖到新页面上
+  const rNow = parseRoute();
+  if (rNow.name !== "industryMap" || rNow.industry !== ind) return;
   if (!g || !g.industries[ind]) {
     app.innerHTML = `<p class="empty">${esc(t("ind.unknown", "没有这个行业。"))}`
       + ` <a href="#/worldmap">${esc(t("wm.title", "全景图谱"))}</a></p>`;
     return;
   }
-  if (parseRoute().name !== "industryMap") return;
 
   const parts = industryParts(ind, g);
   const q = indexData?.quotes || {};
