@@ -244,7 +244,33 @@ function renderTray() {
         <button class="tray-row-x" type="button" data-save="${esc(tk)}" aria-label="${esc(t("save.remove", "移出自选"))}" title="${esc(t("save.remove", "移出自选"))}">✕</button>
       </div>`;
   }).join("");
-  panel.innerHTML = `<div class="tray-rows">${rows}</div>`;
+  panel.innerHTML = `<div class="tray-rows">${rows}</div>${trayLensHTML()}`;
+}
+
+/* 环节透视：自选清单映射到产业链环节（graph 的公开归类），数一数集中在哪。
+   graph 没加载完（首屏极早期）就整块省略，下次开抽屉自然有了。 */
+function trayLensHTML() {
+  const bis = graphData?.boardIdxOf, bl = graphData?.boardList;
+  if (!bis || !bl || !savedList.length) return "";
+  const freq = new Map();
+  for (const tk of savedList) {
+    for (const bi of bis[tk] || []) freq.set(bi, (freq.get(bi) || 0) + 1);
+  }
+  const top = [...freq.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, 6);
+  if (!top.length) return "";
+  const maxN = top[0][1];
+  return `
+    <div class="tray-lens">
+      <div class="tray-lens-title">${esc(t("saved.lensTitle", "环节透视"))}
+        <span class="tray-lens-sub">${esc(t("saved.lensSub", "自选集中在哪些产业链环节"))}</span></div>
+      ${top.map(([bi, n]) => `
+        <div class="tray-lens-row">
+          <span class="tray-lens-name">${esc(bl[bi] || String(bi))}</span>
+          <span class="tray-lens-bar" aria-hidden="true"><i style="width:${Math.round(n / maxN * 100)}%"></i></span>
+          <span class="tray-lens-n">${esc(fmtInt(n))}</span>
+        </div>`).join("")}
+      <span class="tray-lens-note">${esc(t("saved.lensNote", "环节为公开归类；同环节 ≠ 供货关系"))}</span>
+    </div>`;
 }
 
 // 自选抽屉 + 委托式星标点击，只在启动时挂一次
@@ -263,6 +289,7 @@ function setupSaved() {
     if (!tray) return;
     tray.dataset.open = String(open);
     if (bar) bar.setAttribute("aria-expanded", String(open));
+    if (open) renderTray();   // 首次渲染可能在 graph 加载前，开抽屉补一次（环节透视要 boardIdxOf）
   };
   if (bar && tray) bar.addEventListener("click", () => setOpen(tray.dataset.open !== "true"));
   document.getElementById("tray-close")?.addEventListener("click", () => setOpen(false));

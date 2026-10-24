@@ -1864,3 +1864,28 @@ html:not([data-boot="on"]) .boot-console { display: none; }
   color: var(--text-faint); border: 1px solid var(--border);
 }
 .disc-basis { color: var(--text-soft); font-size: 12px; }
+
+/* ---- 自选抽屉 · 环节透视 ---- */
+.tray-lens {
+  margin-top: 10px; padding: 10px 12px 8px;
+  border-top: 1px solid var(--border);
+}
+.tray-lens-title {
+  font-size: 11px; letter-spacing: 0.08em; color: var(--primary); margin-bottom: 8px;
+}
+.tray-lens-sub { margin-left: 6px; color: var(--text-faint); letter-spacing: 0; }
+.tray-lens-row {
+  display: grid; grid-template-columns: minmax(72px, auto) 1fr 24px;
+  align-items: center; gap: 8px; margin-bottom: 5px;
+}
+.tray-lens-name {
+  font-size: 12px; color: var(--text); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.tray-lens-bar { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.tray-lens-bar i { display: block; height: 100%; background: var(--primary); border-radius: 2px; }
+.tray-lens-n {
+  font-size: 11px; color: var(--text-faint); text-align: right;
+  font-family: var(--mono);
+}
+.tray-lens-note { display: block; margin-top: 4px; font-size: 10.5px; color: var(--text-faint); }

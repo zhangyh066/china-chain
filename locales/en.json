@@ -452,5 +452,8 @@
   "health.expect.monthly": "Monthly",
   "health.expect.quarterly": "Quarterly",
   "health.expect.annual": "Annual",
-  "health.expect.static": "Manual"
+  "health.expect.static": "Manual",
+  "saved.lensTitle": "Segment lens",
+  "saved.lensSub": "Where your picks cluster on the chains",
+  "saved.lensNote": "Public classification; same segment ≠ supplier links"
 }

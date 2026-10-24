@@ -452,5 +452,8 @@
   "health.expect.monthly": "月更",
   "health.expect.quarterly": "季更",
   "health.expect.annual": "年更",
-  "health.expect.static": "手工维护"
+  "health.expect.static": "手工维护",
+  "saved.lensTitle": "环节透视",
+  "saved.lensSub": "自选集中在哪些产业链环节",
+  "saved.lensNote": "环节为公开归类；同环节 ≠ 供货关系"
 }
