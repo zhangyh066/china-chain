@@ -57,10 +57,14 @@ def load_json(path, default=None):
 
 
 def save_json(path, obj):
+    # 先写临时文件再原子改名：看门狗超时强杀（_crawl_watchdog.py）可能正好
+    # 落在写盘途中，直写目标文件会留下半个 JSON，被断点逻辑当作"已抓完"永不重试
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=None, separators=(",", ":"))
         f.write("\n")
+    os.replace(tmp, path)
 
 
 def fetch_with_retry(label, fn):

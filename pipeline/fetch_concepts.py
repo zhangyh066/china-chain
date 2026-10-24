@@ -45,14 +45,19 @@ def cached_json(name, fn):
         try:
             df = fn()
             rec = json.loads(df.to_json(orient="records", force_ascii=False))
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(rec, f, ensure_ascii=False)
-            time.sleep(SLEEP)
-            return rec
+            if not rec:
+                # 空结果不是成功：接口被限流时常以空表而非异常返回，落了缓存
+                # 之后每轮都命中空表，这个板块的公司就永久消失了
+                last = RuntimeError("空结果（疑似限流或板块名已变）")
+            else:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(rec, f, ensure_ascii=False)
+                time.sleep(SLEEP)
+                return rec
         except Exception as e:
             last = e
-            print(f"      ! 第 {attempt} 次失败（{type(e).__name__}: {str(e)[:60]}），4 秒后重试")
-            time.sleep(4)
+        print(f"      ! 第 {attempt} 次失败（{type(last).__name__}: {str(last)[:60]}），4 秒后重试")
+        time.sleep(4)
     print(f"      × 放弃 {name}：{last}")
     return []
 

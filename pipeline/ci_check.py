@@ -79,13 +79,20 @@ if pfiles:
     sample = load(os.path.join(pdir, "300750.json")) or {}
     check("公司介绍含主营业务", bool(sample.get("business")), sample.get("ticker", "?"))
     # Python 的 json.dump 会把 NaN 写成字面量——浏览器 JSON.parse 直接炸，必须拦住
-    nan_files = []
-    for fn in pfiles[:]:
-        with open(os.path.join(pdir, fn), encoding="utf-8") as fh:
-            if "NaN" in fh.read() or "Infinity" in fh.read():
+    # （read() 只能调一次：文件被读空后再 read 返回空串，第二个条件会永远检不到）
+    nan_files, broken = [], []
+    for fn in pfiles:
+        try:
+            text = open(os.path.join(pdir, fn), encoding="utf-8").read()
+            if "NaN" in text or "Infinity" in text:
                 nan_files.append(fn)
+            json.loads(text)      # 顺带拦截断文件（抓取进程被强杀的残留）
+        except (OSError, ValueError):
+            broken.append(fn)
     check("data/p/ 无 NaN/Infinity 字面量", not nan_files,
           f"{len(nan_files)} 个文件污染：{nan_files[:3]}")
+    check("data/p/ 全部可解析（无截断文件）", not broken,
+          f"{len(broken)} 个损坏：{broken[:3]}")
 
 for tk, name in [("300750", "宁德时代"), ("002594", "比亚迪"), ("600519", "贵州茅台")]:
     p = os.path.join(PAGES, "c", f"{tk}.html")

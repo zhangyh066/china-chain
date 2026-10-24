@@ -157,27 +157,31 @@ def make_quote(sp, cur, prev_same, prev_fy):
 
 
 def fetch_cache(name, fn):
-    """带磁盘缓存的请求：跑过一次就不重复联网。删掉 raw/ 下对应文件可强制重拉。"""
+    """带磁盘缓存的请求：跑过一次就不重复联网。删掉 raw/ 下对应文件可强制重拉。
+
+    空结果（全市场快照/业绩报表返回空表，限流时的典型表现）按失败处理：
+    落了缓存就成了永久空表，build_chain 会带着全空行情往下走、还不报错。"""
     path = os.path.join(RAW, name + ".json")
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
             return json.load(f)
-    df = None
+    last = None
     for attempt in (1, 2, 3):
         try:
-            df = fn()
-            break
+            records = json.loads(fn().to_json(orient="records", force_ascii=False))
+            if records:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(records, f, ensure_ascii=False)
+                print(f"  ✓ {name}: {len(records)} 条")
+                time.sleep(1)          # 请求之间留点间隔，别把数据源打疼
+                return records
+            last = RuntimeError("空结果（疑似被限流）")
         except Exception as e:
-            if attempt == 3:
-                raise
-            print(f"  ! {name} 第 {attempt} 次失败（{type(e).__name__}），5 秒后重试…")
+            last = e
+        if attempt < 3:
+            print(f"  ! {name} 第 {attempt} 次失败（{type(last).__name__}），5 秒后重试…")
             time.sleep(5)
-    records = json.loads(df.to_json(orient="records", force_ascii=False))
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(records, f, ensure_ascii=False)
-    print(f"  ✓ {name}: {len(records)} 条")
-    time.sleep(1)          # 请求之间留点间隔，别把数据源打疼
-    return records
+    raise last
 
 
 def index_by(rows, key):

@@ -24,8 +24,20 @@ BATCH_TIMEOUT = 600      # 秒。300 家正常约 9 分钟，超时即判定有�
 
 def remaining():
     sel = json.load(open(os.path.join("real", "selected.json"), encoding="utf-8"))
-    return [c["ticker"] for c in sel["companies"]
-            if not os.path.exists(os.path.join(CACHE, c["ticker"] + ".json"))]
+    out = []
+    for c in sel["companies"]:
+        path = os.path.join(CACHE, c["ticker"] + ".json")
+        if not os.path.exists(path):
+            out.append(c["ticker"])
+            continue
+        try:
+            json.load(open(path, encoding="utf-8"))
+        except Exception:
+            # 半截文件（历史上非原子写被强杀留下的）：删掉重抓，别让断点
+            # 逻辑把它当作"已抓完"跳过
+            os.remove(path)
+            out.append(c["ticker"])
+    return out
 
 
 def main():
