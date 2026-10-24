@@ -42,6 +42,7 @@ from datetime import date, timedelta
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)          # 与 fetch_real.py 同目录，保证直接运行也能 import
+from mkt import tencent_sym  # noqa: E402  代码段→sh/sz/bj 前缀（北交所分支在 mkt.py）
 
 DATA = os.path.join(ROOT, "data")
 REAL = os.path.join(HERE, "real")
@@ -101,7 +102,7 @@ def grab(ak, code, start, end, source="tx"):
     source: "tx" 腾讯（默认；东财对本机 IP 有持续限流时的替代源）/ "em" 东财。
     """
     if source == "tx":
-        sym = ("sh" if code.startswith("6") else "sz") + code
+        sym = tencent_sym(code)
         df = fetch_with_retry(
             f"腾讯日K {code}",
             lambda: ak.stock_zh_a_hist_tx(symbol=sym, start_date=start,

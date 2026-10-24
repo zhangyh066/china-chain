@@ -39,6 +39,7 @@ from datetime import date
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)          # 与 fetch_real.py 同目录，保证直接运行也能 import
+from mkt import tencent_sym  # noqa: E402  代码段→sh/sz/bj 前缀（北交所分支在 mkt.py）
 
 REAL = os.path.join(HERE, "real")
 CACHE = os.path.join(REAL, "hist_full")      # 全历史缓存（可断点），格式同 data/h
@@ -88,7 +89,7 @@ def grab(ak, code, start, end, source="tx"):
     points 为空照样落盘。
     """
     if source == "tx":
-        sym = ("sh" if code.startswith("6") else "sz") + code
+        sym = tencent_sym(code)
         df = fetch_with_retry(
             f"腾讯日K(全) {code}",
             lambda: ak.stock_zh_a_hist_tx(symbol=sym, start_date=start,

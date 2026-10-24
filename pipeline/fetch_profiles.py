@@ -108,9 +108,9 @@ def grab(ak, code):
         rec["officeAddr"] = pick("办公地址")
         rec["csrcIndustry"] = pick("所属行业", "证监会行业")
 
+    from mkt import em_zygc_sym      # 代码段→SH/SZ/BJ 前缀（北交所分支在 mkt.py）
     zygc = fetch_with_retry("东财主营构成",
-                            lambda: ak.stock_zygc_em(
-                                symbol=("SH" if code.startswith("6") else "SZ") + code))
+                            lambda: ak.stock_zygc_em(symbol=em_zygc_sym(code)))
 
     def pick_segs(df, class_type, cap):
         sub = df[df["分类类型"] == class_type]

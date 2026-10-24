@@ -51,9 +51,9 @@ def fetch_with_retry(fn):
 
 
 def upgrade_one(ak, code):
+    from mkt import em_zygc_sym       # 代码段→SH/SZ/BJ 前缀（北交所分支在 mkt.py）
     rec = load_json(os.path.join(CACHE, f"{code}.json")) or {"ticker": code}
-    zygc = fetch_with_retry(lambda: ak.stock_zygc_em(
-        symbol=("SH" if code.startswith("6") else "SZ") + code))
+    zygc = fetch_with_retry(lambda: ak.stock_zygc_em(symbol=em_zygc_sym(code)))
     if zygc is None or not len(zygc):
         return False
     latest = zygc[zygc["报告日期"] == zygc["报告日期"].max()]

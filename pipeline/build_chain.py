@@ -37,6 +37,7 @@ GENERATED_AT = date.today().isoformat()
 SCHEMA_VERSION = 2
 
 sys.path.insert(0, HERE)
+from mkt import exchange_cn  # noqa: E402
 
 
 def board_of(code: str) -> str:
@@ -52,7 +53,8 @@ def board_of(code: str) -> str:
 
 
 def exchange_of(code: str) -> str:
-    return "上交所" if code.startswith(("6", "9")) else "深交所"
+    # 代码段→交易所统一走 mkt.py：北交所（4/8/920）此前会被标成"深交所"
+    return exchange_cn(code)
 
 
 def load_json(path, default=None):
