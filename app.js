@@ -733,6 +733,40 @@ function loadChainInfer() {
     .catch(() => (chainInferData = null));
 }
 
+/* 链内披露连线：data/chain_disclosure.json，离线生成（build_chain_disclosure.py）。
+   chains[key] = {count, edges:[{from,to,fromName,toName,fromStage,toStage,kind,ratio,year}]}：
+   披露方与对手方都在同一条链名单内的真实年报边（kind=customer：from 把 to 列为
+   客户，ratio 占 from 营收；kind=supplier：from 是 to 的供应商，ratio 占 to 采购）。
+   404/断网静默 null。 */
+let chainDiscPromise = null;
+let chainDiscData = null;
+function loadChainDisclosure() {
+  return chainDiscPromise ||= getJSON("./data/chain_disclosure.json")
+    .then((d) => (chainDiscData = (d && d.chains ? d : null)))
+    .catch(() => (chainDiscData = null));
+}
+
+/* 链评人工判断槽：data/chain_thesis.json，key → {zh, en}。作者手工维护
+   （管线不重写此文件）；没有对应键 → 链评卡不渲染「判断」段。404 静默 null。 */
+let thesisPromise = null;
+let thesisData = null;
+function loadThesis() {
+  return thesisPromise ||= getJSON("./data/chain_thesis.json")
+    .then((d) => (thesisData = (d && typeof d === "object" ? d : null)))
+    .catch(() => (thesisData = null));
+}
+
+/* 数据健康度：data/health.json，离线生成（build_health.py），#/health 页渲染。
+   sources[id] = {asOf, n, d, expect, stale?, missing?}；expect ∈
+   daily/weekly/monthly/quarterly/annual/static，徽章阈值据此分级。404 静默 null。 */
+let healthPromise = null;
+let healthData = null;
+function loadHealth() {
+  return healthPromise ||= getJSON("./data/health.json")
+    .then((d) => (healthData = (d && d.sources ? d : null)))
+    .catch(() => (healthData = null));
+}
+
 /* 客户与供应商（年报披露）：data/supply.json，离线生成。
    companies[code] = { conc:{year, top5C, top5S, concHist:[[year, top5C], ...近4年]},
                        customers:[{name, code|null, ratio, amount(万元)}], suppliers:[同构] }。
@@ -791,6 +825,8 @@ function parseRoute() {
     };
   }
   if (h === "vision") return { name: "vision" };
+  // 数据健康度：#/health（各数据源的新旧/覆盖，透明化"数据截至"的底气）
+  if (h === "health") return { name: "health" };
   // 产业链看板：27 条链，路由表见 CHAIN_ROUTE（#/li 是锂的旧链接，保留）
   if (CHAIN_ROUTE[h]) return { name: "chain", chainKey: CHAIN_ROUTE[h] };
   // "atlas" 是"全景图谱"的旧名字，留着旧链接不失效
@@ -819,6 +855,8 @@ async function route() {
 
   if (r.name === "vision") {
     await renderVision();
+  } else if (r.name === "health") {
+    await renderHealth();
   } else if (r.name === "chain") {
     await renderChainPage(r.chainKey);
   } else if (r.name === "worldmap") {
@@ -1805,7 +1843,10 @@ function exportIndCsv(ind) {
     const s = String(v ?? "");
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const header = ["代码", "名称", "板块", "交易所", "最新价", "涨跌幅%", "总市值(亿)", "产业链环节数"];
+  const header = [
+    t("csv.code", "代码"), t("csv.name", "名称"), t("csv.board", "板块"), t("csv.exchange", "交易所"),
+    t("csv.price", "最新价"), t("csv.change", "涨跌幅%"), t("csv.mcap", "总市值(亿)"), t("csv.boardCount", "产业链环节数"),
+  ];
   const rows = list.map((c) => {
     const f = q[c.ticker] || {};
     return [
@@ -1816,7 +1857,8 @@ function exportIndCsv(ind) {
   const csv = "\uFEFF" + header.map(cell).join(",") + "\r\n" + rows.join("\r\n") + "\r\n";
   const today = new Date();
   const ds = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-  downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), `${ind}-公司列表-${ds}.csv`);
+  downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }),
+    t("csv.fileName", "{ind}-公司列表-{d}.csv").replace("{ind}", ind).replace("{d}", ds));
 }
 
 // ── 产业链档案（行业/公司/设备）共用渲染件 ─────────────────────────
@@ -1838,8 +1880,8 @@ function chainOutputHTML(ov) {
   // 产值/市场规模：status=ready 且有值才显示数字（带年份与来源）；其余一律占位
   if (!ovReady(ov)) return chainPending();
   const num = `${esc(String(ov.value))}${ov.unit ? " " + esc(ov.unit) : ""}`;
-  const yr = ov.year ? ` <span class="cf-meta">${esc(String(ov.year))} 年</span>` : "";
-  const src = ov.source ? ` <span class="cf-meta">来源：${esc(String(ov.source))}</span>` : "";
+  const yr = ov.year ? ` <span class="cf-meta">${esc(t("chain.yearSuffix", "{y} 年").replace("{y}", String(ov.year)))}</span>` : "";
+  const src = ov.source ? ` <span class="cf-meta">${esc(t("chain.srcPrefix", "来源：{s}").replace("{s}", String(ov.source)))}</span>` : "";
   return `<b class="cf-num">${num}</b>${yr}${src}`;
 }
 
@@ -3452,6 +3494,117 @@ function chainValidateHTML(chainKey) {
       .replace("{n}", fmtInt(ok)).replace("{m}", fmtInt(bad)))}</p>`;
 }
 
+/* 链评卡：结构/传导/纯度/披露四个数据视角自动汇总 + 人工判断槽。
+   自动段只陈述数据事实（不产出观点）；观点由作者在 data/chain_thesis.json 里写，
+   值为中文一句话或 {zh, en}，没写就不渲染判断段。 */
+function chainThesisHTML(chainKey, d, tm) {
+  const tiers = { up: 0, mid: 0, down: 0, support: 0 };
+  const members = new Set();
+  for (const s of d.stages || []) {
+    tiers[s.tier in tiers ? s.tier : "mid"] += 1;
+    for (const c of s.companies || []) members.add(typeof c === "string" ? c : c.code);
+  }
+  const cell = (label, text) =>
+    `<div class="thesis-cell"><b>${esc(label)}</b><span>${text}</span></div>`;
+
+  const cells = [];
+  cells.push(cell(t("thesis.structure", "结构"),
+    d.mode === "category"
+      ? esc(t("thesis.structCat", "{n} 个品类 · 成员 {c} 家")
+          .replace("{n}", fmtInt(d.stages.length)).replace("{c}", fmtInt(members.size)))
+      : esc(t("thesis.structFlow", "上游 {u} · 中游 {m} · 下游 {d} · 配套 {s} 环节，成员 {c} 家")
+          .replace("{u}", tiers.up).replace("{m}", tiers.mid)
+          .replace("{d}", tiers.down).replace("{s}", tiers.support)
+          .replace("{c}", fmtInt(members.size)))));
+
+  if (tm?.source?.type === "price") {
+    const rs = Object.values(tm.stages || {}).map((x) => x.r).filter((x) => typeof x === "number");
+    if (rs.length) {
+      cells.push(cell(t("thesis.tm", "传导"),
+        esc(t("thesis.tmLine", "{src} 与各环节日收益同日相关 r {a}–{b}")
+          .replace("{src}", tm.source.name || "—")
+          .replace("{a}", Math.min(...rs).toFixed(2))
+          .replace("{b}", Math.max(...rs).toFixed(2)))));
+    }
+  }
+
+  const pure = purityData?.chains?.[chainKey];
+  if (pure) {
+    const ps = [];
+    for (const stages of Object.values(pure))
+      for (const co of Object.values(stages))
+        if (co && typeof co.p === "number" && co.p > 0) ps.push(co.p);
+    if (ps.length) {
+      ps.sort((a, b) => a - b);
+      const med = ps[Math.floor((ps.length - 1) / 2)];
+      cells.push(cell(t("thesis.purity", "纯度"),
+        esc(t("thesis.purityLine", "环节纯度中位 {p}（{n} 个环节×公司披露样本）")
+          .replace("{p}", fmtPct(med * 100, false)).replace("{n}", fmtInt(ps.length)))));
+    }
+  }
+
+  const disc = chainDiscData?.chains?.[chainKey];
+  if (disc && disc.count) {
+    const e = disc.edges[0] || {};
+    cells.push(cell(t("thesis.disclosure", "披露"),
+      esc(t("thesis.discLine", "成员间披露连线 {n} 条，最重 {a}→{b}（占营收 {p}）")
+        .replace("{n}", fmtInt(disc.count)).replace("{a}", e.fromName || "—")
+        .replace("{b}", e.toName || "—")
+        .replace("{p}", e.ratio != null ? fmtPct(e.ratio * 100, false) : "—"))));
+  }
+
+  const th = thesisData?.[chainKey];
+  const judgment = th
+    ? `<p class="thesis-note"><b>${esc(t("thesis.judgment", "判断"))}</b>　${esc(typeof th === "string" ? th : pickLang(th.zh, th.en))}</p>`
+    : "";
+
+  return `
+    <section class="sec">
+      <div class="sec-head">
+        <h2 class="sec-title">${esc(t("thesis.title", "链评"))}</h2>
+        <span class="sec-sub">${esc(t("thesis.sub", "结构 / 传导 / 纯度 / 披露四视角自动速览；「判断」为人工撰写"))}</span>
+        <span class="sec-rule"></span>
+      </div>
+      <div class="thesis-grid">${cells.join("")}</div>
+      ${judgment}
+    </section>`;
+}
+
+/* 链内披露连线：披露方与对手方都在链名单里的真实年报边（build_chain_disclosure.py）。
+   kind=customer：from 把 to 列为客户，ratio 占 from 营收；
+   kind=supplier：from 是 to 的供应商，ratio 占 to 采购。复用候选成员的行样式。 */
+function chainDisclosureHTML(chainKey, d) {
+  const rec = chainDiscData?.chains?.[chainKey];
+  if (!rec || !rec.count || !Array.isArray(rec.edges) || !rec.edges.length) return "";
+  const stageName = new Map((d.stages || []).map((s) => [s.key, pickLang(s.name, s.nameEn)]));
+  const TOP_N = 12;
+  const rows = rec.edges.slice(0, TOP_N).map((e) => {
+    const pct = e.ratio != null ? fmtPct(e.ratio * 100, false) : "—";
+    const who = e.kind === "customer" ? e.fromName : e.toName;
+    const share = (e.kind === "customer"
+      ? t("disc.revShare", "占{name}营收 {p}")
+      : t("disc.buyShare", "占{name}采购 {p}"))
+      .replace("{name}", who).replace("{p}", pct);
+    const yr = e.year ? t("sup.concYear", "{y} 年报").replace("{y}", e.year) : "";
+    return `<div class="disc-row">
+      <a class="disc-name" href="#/c/${encodeURIComponent(e.from)}">${esc(e.fromName)}<span class="disc-code">${esc(e.from)}</span></a>
+      <span class="disc-arrow" aria-hidden="true">→</span>
+      <a class="disc-name" href="#/c/${encodeURIComponent(e.to)}">${esc(e.toName)}<span class="disc-code">${esc(e.to)}</span></a>
+      <span class="disc-stage">${esc(stageName.get(e.fromStage) || e.fromStage)} → ${esc(stageName.get(e.toStage) || e.toStage)}</span>
+      <span class="disc-basis">${esc(share)}${yr ? ` · ${esc(yr)}` : ""}</span>
+    </div>`;
+  }).join("");
+  return `
+    <section class="sec disc-sec">
+      <div class="sec-head">
+        <h2 class="sec-title">${esc(t("disc.title", "链内披露连线"))}</h2>
+        <span class="sec-sub">${esc(t("disc.sub", "成员间互相披露的真实客户/供应商关系（年报口径，非推断）"))}${rec.count > TOP_N ? " · " + esc(t("disc.more", "共 {n} 条").replace("{n}", fmtInt(rec.count))) : ""}</span>
+        <span class="sec-rule"></span>
+      </div>
+      <div class="disc-list">${rows}</div>
+    </section>`;
+}
+
 /* 「据披露推断的候选成员」：披露边连到链上成员、但自身不在链条名单里的公司。
    措辞按 relation 区分（两种都来自候选公司自曝的年报）：
    supplies_to = 候选人把链上成员列为客户（占候选人营收）；buys_from = 列为供应商（占候选人采购）。
@@ -3491,7 +3644,7 @@ function chainSuggestHTML(chainKey, d) {
 async function renderChainPage(chainKey) {
   app.innerHTML = "";
   startLoading();
-  const [d, price] = await Promise.all([loadChainBoard(chainKey), loadChainPrice(chainKey), loadPurity(), loadTransmission(), loadChainInfer()]);
+  const [d, price] = await Promise.all([loadChainBoard(chainKey), loadChainPrice(chainKey), loadPurity(), loadTransmission(), loadChainInfer(), loadChainDisclosure(), loadThesis()]);
   const r = parseRoute();
   stopLoading();   // 先还加载计数再判断跳走：早退漏了它，加载线会永久卡死
   if (r.name !== "chain" || r.chainKey !== chainKey) return;
@@ -3550,6 +3703,8 @@ async function renderChainPage(chainKey) {
       <p class="sec-sub">${esc(pickLang(d.sub, d.subEn))}</p>
     </header>
 
+    ${chainThesisHTML(chainKey, d, tm)}
+
     <section class="sec">
       <div class="sec-head">
         <h2 class="sec-title">${esc(t("cboard.flowTitle", "链条全景"))}</h2>
@@ -3561,6 +3716,7 @@ async function renderChainPage(chainKey) {
       </div>
       ${purityData?.chains?.[chainKey] ? purityNoteHTML() : ""}
       ${chainValidateHTML(chainKey)}
+      ${chainDisclosureHTML(chainKey, d)}
     </section>
 
     ${chainSuggestHTML(chainKey, d)}
@@ -4623,7 +4779,8 @@ function drawIndustryRing(cv, ind, g, sel = null, hoverSector = -1) {
     ctx.fillText(`${sel.tk} · ${fmtCap(f.marketCap)} · ${fmtPct(f.changePercent)}`, cx, y0 + 22);
     ctx.font = `400 11.5px ${font}`;
     ctx.fillStyle = INK;
-    const line = mine.slice(0, 2).join(" · ") + (mine.length > 2 ? ` 等 ${mine.length} 个环节` : "");
+    const line = mine.slice(0, 2).join(" · ")
+      + (mine.length > 2 ? " " + t("ring.moreBoards", "等 {n} 个环节").replace("{n}", mine.length) : "");
     ctx.fillText(line, cx, y0 + 44);
     ctx.fillStyle = GOLD;
     ctx.fillText(t("ring.compFmt", "同环节 {a} 家 · 跨环节 {b} 家")
@@ -4843,6 +5000,93 @@ async function renderVision() {
     <div class="crumb"><a href="#/"><span class="arr" aria-hidden="true">←</span> ${esc(t("crumb.home", "全部公司"))}</a></div>
     <article class="prose vision">${body}</article>`;
   playVisionIntro();
+}
+
+/* ---- 数据健康度页：#/health --------------------------------------------------
+   把 data/health.json（build_health.py 产出）摊开：每个数据源的数据截至、
+   覆盖规模、更新预期。徽章分级按 expect 档位给不同的容许窗口——
+   日更源 32 天没动会直接标"过期"，年更源 100 天不动仍算正常。 */
+const HEALTH_ORDER = ["quotes", "history", "trends", "chains", "supply",
+  "disclosure", "purity", "transmission", "profiles", "steps", "graph"];
+const HEALTH_WINDOWS = {          // [新鲜上限, 滞后上限] 天；超过即"过期"
+  daily: [7, 14], weekly: [14, 30], monthly: [35, 60],
+  quarterly: [100, 190], annual: [400, 550], static: [Infinity, Infinity],
+};
+
+async function renderHealth() {
+  app.innerHTML = "";
+  startLoading();
+  await loadHealth();
+  stopLoading();
+  if (parseRoute().name !== "health") return;
+  if (!healthData) {
+    app.innerHTML = `<div class="crumb"><a href="#/"><span class="arr" aria-hidden="true">←</span> ${esc(t("crumb.home", "全部公司"))}</a></div>`
+      + `<p class="empty">${esc(t("health.noData", "健康度数据还没生成（pipeline/build_health.py）。"))}</p>`;
+    return;
+  }
+
+  const ageDays = (iso) => {
+    const n = Math.round((Date.now() - new Date(iso + "T00:00:00").getTime()) / 86400000);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+
+  const rows = HEALTH_ORDER.map((id) => {
+    const v = healthData.sources[id];
+    if (!v) return "";
+    const [okDays, warnDays] = HEALTH_WINDOWS[v.expect] || HEALTH_WINDOWS.static;
+    let badge, cls;
+    if (v.missing) { badge = t("health.bMissing", "缺失"); cls = "bad"; }
+    else if (!v.asOf) { badge = t("health.bNoTs", "无时间戳"); cls = "warn"; }
+    else {
+      const age = ageDays(v.asOf);
+      if (age == null) { badge = t("health.bNoTs", "无时间戳"); cls = "warn"; }
+      else if (age <= okDays) { badge = t("health.bFresh", "新鲜"); cls = "good"; }
+      else if (age <= warnDays) { badge = t("health.bStale", "滞后"); cls = "warn"; }
+      else { badge = t("health.bExpired", "过期"); cls = "bad"; }
+    }
+    const asOfTxt = v.asOf
+      ? `${esc(v.asOf)} · ${esc(t("health.daysAgo", "{n} 天前").replace("{n}", ageDays(v.asOf) ?? "—"))}`
+      : "—";
+    let cov;
+    if (id === "disclosure") {
+      cov = t("health.discCov", "{n} 条边 · {d} 条链").replace("{n}", fmtInt(v.n || 0)).replace("{d}", fmtInt(v.d || 0));
+    } else if (v.d) {
+      cov = `${fmtInt(v.n ?? 0)}/${fmtInt(v.d)}`;
+    } else {
+      cov = v.n != null ? fmtInt(v.n) : "—";
+    }
+    if (id === "history" && v.stale) {
+      cov += ` · ${esc(t("health.hStale", "{n} 份落后主线超过 {d} 天")
+        .replace("{n}", v.stale).replace("{d}", healthData.staleHDays))}`;
+    }
+    return `<tr>
+      <td>${esc(t("health." + id, id))}</td>
+      <td>${asOfTxt}</td>
+      <td><span class="health-badge ${cls}">${esc(badge)}</span></td>
+      <td>${cov}</td>
+      <td>${esc(t("health.expect." + v.expect, v.expect))}</td>
+    </tr>`;
+  }).join("");
+
+  app.innerHTML = `
+    <div class="crumb"><a href="#/"><span class="arr" aria-hidden="true">←</span> ${esc(t("crumb.home", "全部公司"))}</a></div>
+    <article class="prose">
+      <h1>${esc(t("health.title", "数据健康度"))}</h1>
+      <p class="sec-sub">${esc(t("health.sub", "每个数据源的数据截至、覆盖规模与更新预期——哪个源滞后了，如实展示，不藏在免责声明里。"))}</p>
+      <p class="sec-sub">${esc(t("health.snapshot", "快照生成于 {d} · 覆盖 {n} 家上市公司")
+        .replace("{d}", healthData.generatedAt || "—").replace("{n}", fmtInt(healthData.companyCount)))}</p>
+      <table class="cmp-table health-table">
+        <thead><tr>
+          <th>${esc(t("health.colSource", "数据源"))}</th>
+          <th>${esc(t("health.colAsOf", "数据截至"))}</th>
+          <th>${esc(t("health.colFresh", "新鲜度"))}</th>
+          <th>${esc(t("health.colCov", "覆盖"))}</th>
+          <th>${esc(t("health.colExpect", "预期"))}</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p class="sec-sub">${esc(t("health.foot", "口径：行情/趋势按交易日计；披露类数据随年报披露节奏（年更属正常）。陈旧统计见日线历史一行。"))}</p>
+    </article>`;
 }
 
 // 观点页入场：先用和首屏一样的打字机打出标题，最后一字落定时正文逐段落淡入。
@@ -5262,6 +5506,8 @@ function refreshChrome() {
   const fl = document.getElementById("footer-links");
   if (fl) {
     fl.innerHTML = `<a href="#/vision">${esc(t("nav.vision", "我们的观点"))}</a>`
+      + `<span class="footer-dot" aria-hidden="true">·</span>`
+      + `<a href="#/health">${esc(t("nav.health", "数据健康度"))}</a>`
       + `<span class="footer-dot" aria-hidden="true">·</span>`
       + `<a href="https://github.com/zhangyh066/china-chain/issues/new/choose" target="_blank" rel="noopener">${esc(t("footer.feedback", "数据纠错"))}</a>`;
   }

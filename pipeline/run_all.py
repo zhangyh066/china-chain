@@ -22,8 +22,10 @@
 仅当 data/chain/ 存在时跑）、build_purity.py（概念纯度，离线，仅当
 data/p/ 存在时跑，读当轮 chain 产物）。
 
-最后固定跑 prerender.py 重生成 pages/ 与 sitemap/robots（公司名单变了
-静态页必须跟着变，否则 ci_check 的页数断言会把 CI 锁死）。
+supply 之后是两个离线汇总步：build_chain_disclosure.py（链内披露连线，
+读 supply.json + data/chain/）、build_health.py（数据健康度快照，只读 data/，
+#/health 页渲染）。最后固定跑 prerender.py 重生成 pages/ 与 sitemap/robots
+（公司名单变了静态页必须跟着变，否则 ci_check 的页数断言会把 CI 锁死）。
 
 purity 之后还有本地专属一步 build_supply.py（披露级供应链：前五大客户/
 供应商实名明细与集中度）：原始数据是 新建文件夹/ 下的 CNRDS 表，许可
@@ -56,6 +58,8 @@ TRENDS_STEP = ("build_trends.py", False)
 CHAINS_STEP = ("build_chains.py", False)
 TRANSMISSION_STEP = ("build_transmission.py", False)
 SUPPLY_STEP = ("build_supply.py", False)
+DISCLOSURE_STEP = ("build_chain_disclosure.py", False)
+HEALTH_STEP = ("build_health.py", False)
 PRERENDER_STEP = ("prerender.py", False)
 
 
@@ -147,6 +151,22 @@ def main():
     else:
         print("\n-- 跳过 build_supply.py：新建文件夹/ 无 CNRDS 原始表"
               "（本地专属数据，CI 上属预期）", flush=True)
+
+    # 链内披露连线（离线，读已入库的 supply.json + data/chain/）：链页的披露区块与链评卡用
+    if os.path.isfile(os.path.join(data_dir, "supply.json")) and os.path.isdir(os.path.join(data_dir, "chain")):
+        rc = run(DISCLOSURE_STEP[0], [])
+        n_steps += 1
+        if rc:
+            print(f"\n[FAIL] build_chain_disclosure.py 中断，总耗时 {(time.time()-t0)/60:.1f} 分钟")
+            return rc
+
+    # 数据健康度快照（离线，只读 data/）：放在所有产物步之后、prerender 之前，
+    # #/health 页如实展示各源新旧
+    rc = run(HEALTH_STEP[0], [])
+    n_steps += 1
+    if rc:
+        print(f"\n[FAIL] build_health.py 中断，总耗时 {(time.time()-t0)/60:.1f} 分钟")
+        return rc
 
     # 静态页/sitemap 必须与 data/ 同步再生成：ci_check 断言"页数 = 公司数"，
     # 公司名单一变（IPO/退市/概念漂移），pages/ 不重跑整个 CI 就被页数断言锁死

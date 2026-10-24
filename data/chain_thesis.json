@@ -1,0 +1,7 @@
+{
+  "_readme": "链评人工判断槽：key 为链 key（与 data/chain/{key}.json 同名），值为中文一句话或 {\"zh\": \"…\", \"en\": \"…\"}。本文件由作者手工维护，管线不重写；没有对应键的链，链评卡不渲染「判断」段。",
+  "_example": {
+    "zh": "示例：锂电中游产能过剩下的差异化环节（隔膜、结构件）比正极更抗价格战——依据见传导与纯度两栏。",
+    "en": "Example: differentiate segments (separator, structural parts) resist price wars better than cathode — see transmission & purity."
+  }
+}
