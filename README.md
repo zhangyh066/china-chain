@@ -1,9 +1,7 @@
 # 链谱 ChainAtlas
 
 **在线体验：**
-- **https://zhangyh066.github.io/china-chain/**（GitHub Pages，CI 自动部署：验证通过才发布）
-- https://0ebad93a143e456cbd2e30cb01966249.app.workbuddy.host/#/vision（workbuddy 托管）
-
+- **https://zhangyh066.github.io/china-chain/**
 A 股上市公司产业链知识图谱：**4,071 家公司**、**24 个申万一级行业**、**199 个产业链环节**。
 零框架、零运行时依赖、零构建步骤——原生 ES Module + 静态 JSON，浏览器直接运行。
 
