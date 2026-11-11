@@ -1793,8 +1793,11 @@ html:not([data-boot="on"]) .boot-console { display: none; }
 
 /* 页脚链接（观点页从顶栏降级到这里） */
 #footer-links { margin-left: 10px; }
-#footer-links a { color: var(--text-soft); }
-#footer-links a:hover { color: var(--primary); }
+#footer-links a, #footer-links .footer-link { color: var(--text-soft); }
+#footer-links a:hover, #footer-links .footer-link:hover { color: var(--primary); }
+#footer-links .footer-link {
+  padding: 0; border: 0; background: none; font: inherit; cursor: pointer;
+}
 .footer-dot { margin: 0 7px; color: var(--border-strong); }
 
 @media (max-width: 700px) {

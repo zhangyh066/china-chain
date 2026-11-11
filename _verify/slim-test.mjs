@@ -145,6 +145,24 @@ check('头部带"截至"日期标签', search.asOfTag === true);
 check('公司页带"加入对比"按钮', search.cmpPill === true);
 check('公司介绍块（p/ 按需加载）', search.intro === true, search.introBiz);
 
+console.log('— 分享与数据纠错 —');
+const feedback = JSON.parse(await evaluate(`JSON.stringify((() => {
+  const link = document.getElementById('feedback-link');
+  const body = link ? new URL(link.href).searchParams.get('body') || '' : '';
+  return { body, shareExists: !!document.getElementById('share-page') };
+})())`));
+check('纠错链接携带公司路由与数据快照', feedback.body.includes('#/c/002594')
+  && feedback.body.includes(`数据快照：${asOf}`), feedback.body.slice(-220));
+await evaluate(`Object.defineProperty(navigator, 'clipboard', {
+  configurable: true,
+  value: { writeText: (text) => { window.__copiedPageLink = text; return Promise.resolve(); } }
+})`);
+await evaluate(`document.getElementById('share-page').click()`);
+await sleep(100);
+const copiedPage = await evaluate(`window.__copiedPageLink || ''`);
+check('复制按钮复制当前公司页链接', copiedPage.endsWith('#/c/002594')
+  && feedback.shareExists === true, copiedPage);
+
 console.log('— 行业页 —');
 await navigate(BASE + '#/i/%E7%94%B5%E5%AD%90');
 await waitFor(`document.querySelectorAll('.ind-stat b').length === 4`, 20000);
@@ -189,7 +207,7 @@ check('观点页 markdown 渲染', visionLen === true);
 console.log('— 页脚链接（观点入口 + 数据纠错）—');
 const foot = JSON.parse(await evaluate(`JSON.stringify({
   links: !!document.getElementById('footer-links'),
-  feedback: !!document.querySelector('#footer-links a[href*="issues/new/choose"]'),
+  feedback: !!document.querySelector('#footer-links a[href*="issues/new"]'),
   feedbackText: (document.getElementById('footer-links')?.textContent || '').includes('数据纠错'),
   visionLink: !!document.querySelector('#footer-links a[href="#/vision"]'),
   navVision: (document.getElementById('nav-vision')?.getAttribute('href') || '')

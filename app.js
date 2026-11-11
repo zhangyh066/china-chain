@@ -5495,6 +5495,58 @@ function markCurrentNav(name) {
   }
 }
 
+function feedbackHref() {
+  const route = location.hash || "#/";
+  const snapshot = indexData?.generatedAt || "未注明";
+  const body = [
+    "## 问题描述",
+    "",
+    "<!-- 请说明实际结果、预期结果，以及必要的证据；不要在下方填写密码或个人信息。 -->",
+    "",
+    "## 页面上下文（自动生成）",
+    `- 页面链接：${location.href}`,
+    `- 路由：${route}`,
+    `- 数据快照：${snapshot}`,
+    `- 界面语言：${getLocale()}`,
+    "",
+    "## 实际结果与预期结果",
+    "",
+  ].join("\n");
+  const params = new URLSearchParams({ title: `[数据纠错] ${route}`, body });
+  return `https://github.com/zhangyh066/china-chain/issues/new?${params}`;
+}
+
+function refreshFeedbackLink() {
+  const link = document.getElementById("feedback-link");
+  if (link) link.href = feedbackHref();
+}
+
+async function copyPageLink() {
+  const button = document.getElementById("share-page");
+  if (!button) return;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(location.href);
+    } else {
+      const input = document.createElement("textarea");
+      input.value = location.href;
+      input.style.position = "fixed";
+      input.style.opacity = "0";
+      document.body.appendChild(input);
+      input.select();
+      const copied = document.execCommand("copy");
+      input.remove();
+      if (!copied) throw new Error("copy failed");
+    }
+    button.textContent = t("footer.copied", "已复制");
+  } catch {
+    button.textContent = t("footer.copyFailed", "复制失败，请手动复制地址栏");
+  }
+  window.setTimeout(() => {
+    if (button.isConnected) button.textContent = t("footer.share", "复制本页链接");
+  }, 1800);
+}
+
 function refreshChrome() {
   const ph = t("search.placeholder", "搜索名称或代码…");
   searchEl.placeholder = ph;
@@ -5529,14 +5581,18 @@ function refreshChrome() {
   const cmpClear = document.getElementById("cmp-clear");
   if (cmpClear) cmpClear.textContent = t("saved.clear", "清空");
   renderCmpTray();
-  // 页脚链接：观点页从顶栏降级到这里，另开一个"数据纠错"出口
+  // 分享只复制当前地址；纠错仅在用户主动打开 GitHub 时携带页面上下文。
   const fl = document.getElementById("footer-links");
   if (fl) {
     fl.innerHTML = `<a href="#/vision">${esc(t("nav.vision", "我们的观点"))}</a>`
       + `<span class="footer-dot" aria-hidden="true">·</span>`
       + `<a href="#/health">${esc(t("nav.health", "数据健康度"))}</a>`
       + `<span class="footer-dot" aria-hidden="true">·</span>`
-      + `<a href="https://github.com/zhangyh066/china-chain/issues/new/choose" target="_blank" rel="noopener">${esc(t("footer.feedback", "数据纠错"))}</a>`;
+      + `<button id="share-page" class="footer-link" type="button">${esc(t("footer.share", "复制本页链接"))}</button>`
+      + `<span class="footer-dot" aria-hidden="true">·</span>`
+      + `<a id="feedback-link" href="https://github.com/zhangyh066/china-chain/issues/new" target="_blank" rel="noopener">${esc(t("footer.feedback", "数据纠错"))}</a>`;
+    document.getElementById("share-page").onclick = copyPageLink;
+    refreshFeedbackLink();
   }
 }
 
@@ -5826,7 +5882,11 @@ async function boot() {
     });
   }
 
-  window.addEventListener("hashchange", () => { closePalette(); route(); });
+  window.addEventListener("hashchange", () => {
+    closePalette();
+    refreshFeedbackLink();
+    route();
+  });
 
   // 启动序列先谢幕，首个视图再亮相——hero 打字机、数字滚动、大环扫入
   // 都在幕布揭开后才开始，编排感才成立
